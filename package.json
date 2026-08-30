@@ -1,7 +1,8 @@
 {
   "name": "polaris-music-player",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
+  "author": "Rhigo",
   "description": "A beautiful, private desktop music player for local and NAS libraries.",
   "main": "electron/main.js",
   "type": "module",
@@ -19,6 +20,7 @@
   "build": {
     "appId": "com.polaris.music",
     "productName": "Polaris",
+    "copyright": "Copyright © 2026 Rhigo",
     "directories": {
       "output": "C:/Users/rhigo/AppData/Local/Temp/polaris-release",
       "buildResources": "build-resources"
@@ -30,8 +32,7 @@
     ],
     "win": {
       "target": "portable",
-      "icon": "build-resources/icon.ico",
-      "signExecutable": false
+      "icon": "build-resources/icon.ico"
     },
     "portable": {
       "artifactName": "Polaris-${version}-Portable.${ext}"

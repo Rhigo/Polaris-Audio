@@ -186,18 +186,40 @@ h1 { margin: 5px 0 9px; color: var(--text); font-size: clamp(34px, 4vw, 58px); l
 .artist-links button { padding: 5px 8px; color: #efedeb; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: rgba(0,0,0,.34); font-size: 10px; }
 .artist-links button:hover { color: white; background: rgba(255,255,255,.12); }
 .artist-biography { max-width: 880px; margin: -5px 0 42px; color: #b7b4b5; font-size: 13px; line-height: 1.75; }
-.settings-groups { max-width: 920px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
-.settings-group { min-height: 220px; padding: 24px; display: flex; flex-direction: column; gap: 18px; background: #151517; }
-.settings-group h2 { margin: 0; font-size: 16px; }
+.settings-page { max-width: 1040px; padding-bottom: 34px; }
+.settings-heading { min-height: 132px; margin-bottom: 20px; display: flex; align-items: end; justify-content: space-between; gap: 30px; }
+.settings-heading h1 { margin: 4px 0 7px; font-size: 36px; }
+.settings-heading > div:first-child > p:last-child { color: var(--muted); font-size: 12px; }
+.release-mark { min-width: 350px; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: rgba(255,255,255,.035); }
+.release-mark img { width: 42px; height: 42px; border-radius: 5px; }
+.release-mark > span { display: grid; gap: 3px; }
+.release-mark small { color: var(--muted); font-size: 9px; text-transform: uppercase; }
+.release-mark strong { font-size: 13px; }
+.release-mark .secondary-button { min-height: 34px; padding-inline: 11px; }
+.release-mark .secondary-button svg:last-child { width: 12px; color: var(--muted); }
+.settings-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.settings-group { min-height: 220px; padding: 22px; display: flex; flex-direction: column; gap: 18px; border: 1px solid var(--line); border-radius: 6px; background: #151517; box-shadow: 0 10px 30px rgba(0,0,0,.12); }
+.settings-group h2 { margin: 0; font-size: 14px; }
 .settings-group > p { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .settings-group > label { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 44%); align-items: center; gap: 16px; color: #d5d2d1; font-size: 12px; }
 .settings-group select { height: 34px; padding: 0 8px; color: var(--text); border: 1px solid var(--line); border-radius: 4px; background: #242326; }
 .settings-group input[type='color'] { justify-self: end; width: 46px; height: 30px; border: 0; background: none; }
-.accent-settings { max-width: 920px !important; margin-top: 1px !important; }
-.accent-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); }
-.accent-settings .settings-group { min-height: 0; border: 1px solid var(--line); }
+.settings-group-title { display: flex; align-items: center; gap: 11px; }
+.settings-group-title > svg { width: 18px; color: var(--accent); }
+.settings-group-title > span { display: grid; gap: 3px; }
+.settings-group-title small { color: var(--muted); font-size: 9px; }
+.settings-path { min-height: 34px; padding: 9px 10px; border: 1px solid rgba(255,255,255,.06); border-radius: 4px; background: rgba(0,0,0,.18); }
+.settings-action { align-self: start; margin-top: auto; }
+.settings-group--visualizer { grid-row: span 2; }
+.settings-group--release { min-height: 0; grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(290px, .75fr); align-items: center; gap: 28px; background: linear-gradient(115deg, #17151b, #151517 58%); }
+.release-copy ul { margin: 17px 0 0; padding: 0; display: grid; gap: 8px; list-style: none; }
+.release-copy li { display: flex; align-items: center; gap: 9px; color: #c9c6c7; font-size: 11px; }
+.release-copy li::before { content: ''; width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--accent); }
+.update-settings { padding-left: 24px; display: grid; gap: 13px; border-left: 1px solid var(--line); }
 .update-settings > div { display: flex; flex-wrap: wrap; gap: 9px; }
-.update-settings > small { color: var(--muted); font-size: 10px; }
+.update-settings .primary-button { height: 40px; margin: 0; }
+.release-status { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.release-status--available { color: #e5d5ff; }
 .accent-picker { margin: 0; padding: 0; border: 0; }
 .accent-picker legend { margin-bottom: 10px; color: #d5d2d1; font-size: 12px; }
 .accent-picker > div { display: flex; flex-wrap: wrap; gap: 9px; }
@@ -315,7 +337,6 @@ input[type='range'] { height: 3px; margin: 0; accent-color: var(--accent); curso
 @media (max-width: 760px) {
   .update-toast { left: 12px; right: 12px; bottom: 86px; width: auto; grid-template-columns: auto minmax(0, 1fr) auto; }
   .update-toast .primary-button { grid-column: 2 / -1; justify-self: start; }
-  .accent-settings { grid-template-columns: 1fr; }
   .app { grid-template: 52px minmax(0, 1fr) 68px / 1fr; }
   .titlebar { min-width: 0; grid-column: 1; padding: 0 150px 0 16px; gap: 12px; }
   .wordmark { width: auto; }
@@ -400,8 +421,15 @@ input[type='range'] { height: 3px; margin: 0; accent-color: var(--accent); curso
 @media (max-width: 760px) {
   .feature-heading { min-height: 0; align-items: stretch; flex-direction: column; gap: 12px; padding-bottom: 22px; }
   .heading-actions { padding: 0; }
+  .settings-heading { min-height: 0; align-items: stretch; flex-direction: column; gap: 18px; }
+  .settings-heading h1 { font-size: 30px; }
+  .release-mark { min-width: 0; width: 100%; grid-template-columns: 38px minmax(0, 1fr) auto; }
+  .release-mark img { width: 38px; height: 38px; }
   .settings-groups { grid-template-columns: 1fr; }
   .settings-group { min-height: 0; padding: 19px; }
+  .settings-group--visualizer { grid-row: auto; }
+  .settings-group--release { grid-column: auto; grid-template-columns: 1fr; gap: 20px; }
+  .update-settings { padding: 18px 0 0; border-top: 1px solid var(--line); border-left: 0; }
   .playlist-rename-button { position: static; margin-bottom: 18px; }
   .playlist-rename-editor { position: static; margin-bottom: 18px; }
   .playlist-rename-editor input { min-width: 0; width: 100%; }

@@ -4,7 +4,7 @@
 
 Polaris plays your own collection directly from disk. It combines a responsive library, immersive playback, synchronized lyrics, rich artist pages, playlists, and a preference-aware Supermix without uploading your audio.
 
-[Download Polaris for Windows](https://github.com/Rhigo/Polaris-Audio/releases/latest/download/Polaris-1.0.2-Portable.exe)
+[Download Polaris for Windows](https://github.com/Rhigo/Polaris-Audio/releases/latest/download/Polaris-1.0.3-Portable.exe)
 
 No installer is required. Download the portable `.exe`, open it, and choose your music folder.
 
@@ -56,7 +56,7 @@ Online results and misses are cached. MusicBrainz requests are serialized and ra
 
 ## Getting Started
 
-1. Download or build `Polaris-1.0.2-Portable.exe`.
+1. Download or build `Polaris-1.0.3-Portable.exe`.
 2. Open Polaris and select **Add music folder**.
 3. Choose a local folder, mapped network drive, or UNC share.
 4. Leave Polaris open for the initial metadata scan. Later refreshes process only changed files.
@@ -91,7 +91,13 @@ Build the portable Windows application:
 npm run dist
 ```
 
-The configured builder writes `Polaris-1.0.2-Portable.exe` to the local release output directory.
+The configured builder writes `Polaris-1.0.3-Portable.exe` to the local release output directory.
+
+### Windows code signing
+
+Release builds carry Rhigo publisher metadata and automatically use an Authenticode certificate when electron-builder finds `CSC_LINK` and `CSC_KEY_PASSWORD`. `CSC_LINK` may point to a local `.pfx` file or contain its base64 value. Keep the certificate and password outside the repository.
+
+A trusted OV or EV code-signing certificate issued to Rhigo is required to establish SmartScreen reputation. Publisher metadata or a self-signed certificate alone cannot prevent Windows warnings.
 
 ## Stack
 
