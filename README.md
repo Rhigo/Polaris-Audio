@@ -65,6 +65,10 @@ Polaris checks the repository's latest GitHub Release when it starts and on dema
 
 For the best browsing experience, keep artist, album, genre, year, disc, and track tags populated. Place synchronized lyrics beside a song using the same filename and an `.lrc` extension.
 
+## Removing Polaris
+
+Close Polaris and delete the portable executable. To also remove its library index, settings, artwork, and online metadata caches, delete `%APPDATA%\Polaris`.
+
 ## Development
 
 Requirements: Windows, Node.js 22 or later, and npm.
@@ -99,10 +103,12 @@ Release builds carry Rhigo publisher metadata and automatically use an Authentic
 
 A trusted OV or EV code-signing certificate issued to Rhigo is required to establish SmartScreen reputation. Publisher metadata or a self-signed certificate alone cannot prevent Windows warnings.
 
+Qualifying open-source releases can instead use the free SignPath Foundation workflow documented in [SIGNING.md](SIGNING.md).
+
 ## Stack
 
 Electron 44, React 19, TypeScript 6, Vite 8, `music-metadata`, Lucide, and Playwright.
 
 ## License
 
-No license has been selected yet. All rights are reserved by the repository owner.
+Polaris is open source under the [MIT License](LICENSE).

@@ -3,7 +3,16 @@
   "private": true,
   "version": "1.0.3",
   "author": "Rhigo",
+  "license": "MIT",
   "description": "A beautiful, private desktop music player for local and NAS libraries.",
+  "homepage": "https://github.com/Rhigo/Polaris-Audio#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rhigo/Polaris-Audio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rhigo/Polaris-Audio/issues"
+  },
   "main": "electron/main.js",
   "type": "module",
   "scripts": {
@@ -28,6 +37,7 @@
     "files": [
       "build/**/*",
       "electron/**/*",
+      "LICENSE",
       "package.json"
     ],
     "win": {
