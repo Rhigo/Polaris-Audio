@@ -144,6 +144,7 @@ try {
 
   await page.getByRole('button', { name: 'Genres', exact: true }).click()
   await page.getByRole('heading', { name: 'Genres' }).waitFor()
+  if (process.env.POLARIS_DOCS_SCREENSHOTS) await page.screenshot({ path: path.join(process.env.POLARIS_DOCS_SCREENSHOTS, 'genres.png') })
   await page.getByRole('button', { name: /Test 1 songs/ }).click()
   await page.getByRole('heading', { name: 'Test', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Decades', exact: true }).click()
@@ -205,6 +206,7 @@ try {
   await page.getByLabel('Style').selectOption('waveform')
   await page.getByLabel('Intensity').fill('0.7')
   await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.settings.visualizerStyle === 'waveform' && value.settings.visualizerIntensity === 0.7))
+  if (process.env.POLARIS_DOCS_SCREENSHOTS) await page.screenshot({ path: path.join(process.env.POLARIS_DOCS_SCREENSHOTS, 'settings.png') })
   await page.getByRole('button', { name: 'Songs', exact: true }).click()
 
   const search = page.getByPlaceholder('Search songs, artists, albums')

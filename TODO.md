@@ -97,3 +97,15 @@
 - [x] Run `npm run test:smoke`.
 - [x] Run `npm run test:performance`.
 - [ ] Package and launch the updated portable Windows release.
+
+## Large Library And Discovery Update
+
+- [x] Add stat-aware incremental scans, artwork deduplication, automatic folder watching, and NAS polling fallback.
+- [x] Preserve track identity across uniquely matched file moves and renames.
+- [x] Add collapsible Library navigation with genre and decade discovery.
+- [x] Add thumbs-up, thumbs-down, playlist, shuffle, and repeat actions to expanded playback.
+- [x] Feed explicit ratings into Supermix and exclude disliked tracks.
+- [x] Enrich artist pages with social links and local-only ListenBrainz popularity.
+- [x] Optimize artist/album lookup, lyric timing, elapsed updates, and expanded artwork rendering.
+- [x] Validate Songs and search with a 20,000-track fixture.
+- [x] Capture real desktop and mobile screenshots and refresh the README.
