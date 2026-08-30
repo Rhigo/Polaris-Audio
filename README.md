@@ -51,13 +51,15 @@ Online requests contain only the metadata needed for the selected feature:
 | [TheAudioDB](https://www.theaudiodb.com/) | Artist biographies and imagery |
 | [MusicBrainz](https://musicbrainz.org/) | Canonical artist identity and public links |
 | [ListenBrainz](https://listenbrainz.org/) | Global recording rank, filtered to local tracks |
+| [Deezer](https://www.deezer.com/) | Public artist track rank when ListenBrainz is unavailable |
+| [Apple Music](https://music.apple.com/) | Final artist catalog fallback |
 | Wikimedia | Artist image fallback |
 
 Online results and misses are cached. MusicBrainz requests are serialized and rate-limited with a descriptive user agent.
 
 ## Getting Started
 
-1. Download or build `Polaris-1.0.4-Portable.exe`.
+1. Download or build `Polaris-1.0.5-Portable.exe`.
 2. Open Polaris and select **Add music source**.
 3. Choose a local folder, mapped network drive, or UNC share. Add more sources from Settings at any time.
 4. Leave Polaris open for the initial metadata scan. Later refreshes process only changed files.
@@ -96,7 +98,7 @@ Build the portable Windows application:
 npm run dist
 ```
 
-The configured builder writes `Polaris-1.0.4-Portable.exe` to the local release output directory.
+The configured builder writes `Polaris-1.0.5-Portable.exe` to the local release output directory.
 
 ### Windows code signing
 

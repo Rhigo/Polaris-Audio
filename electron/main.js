@@ -65,8 +65,10 @@ const externalUrl = (value) => {
 
 const normalizedArtistName = (value = '') => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim()
 const exactArtistMatch = (candidate, requested) => normalizedArtistName(candidate) === normalizedArtistName(requested)
+const catalogArtistMatch = (candidate = '', requested = '') => candidate.split(/\s*(?:&|,|feat(?:uring)?|ft\.)\s*/i).some((name) => exactArtistMatch(name, requested))
 const wikipediaArtistMatch = (candidate, requested) => exactArtistMatch(candidate?.replace(/\s*\((?:band|musician|rapper|singer|group|artist|dj)\)\s*$/i, ''), requested)
 const releasesUrl = 'https://github.com/Rhigo/Polaris-Audio/releases'
+const artistRankingVersion = 3
 
 function versionParts(value = '') {
   const match = String(value).trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)/)
@@ -598,7 +600,7 @@ app.whenReady().then(async () => {
       }
       const cached = artistImageCache[artist]
       const cacheLifetime = cached?.resolvedArtist ? 30 * 24 * 60 * 60 * 1000 : 6 * 60 * 60 * 1000
-      if (cached && typeof cached !== 'string' && cached.requestedArtist === normalizedArtistName(artist) && Date.now() - cached.cachedAt < cacheLifetime) return cached
+      if (cached && typeof cached !== 'string' && cached.rankingVersion === artistRankingVersion && cached.requestedArtist === normalizedArtistName(artist) && Date.now() - cached.cachedAt < cacheLifetime) return cached
 
       const audioDbUrl = `${process.env.AUDIODB_API_URL || 'https://www.theaudiodb.com/api/v1/json/123/search.php'}?s=${encodeURIComponent(artist)}`
       const audioDbResponse = await net.fetch(audioDbUrl, { signal: AbortSignal.timeout(6000) })
@@ -630,11 +632,36 @@ app.whenReady().then(async () => {
 
       let topRecordings = []
       if (mbid) {
-        const popularityResponse = await net.fetch(`${process.env.LISTENBRAINZ_API_URL || 'https://api.listenbrainz.org/1'}/popularity/top-recordings-for-artist/${encodeURIComponent(mbid)}`, { signal: AbortSignal.timeout(8000) })
+        const listenBrainzToken = process.env.LISTENBRAINZ_TOKEN?.trim()
+        const popularityResponse = await net.fetch(`${process.env.LISTENBRAINZ_API_URL || 'https://api.listenbrainz.org/1'}/popularity/top-recordings-for-artist/${encodeURIComponent(mbid)}`, {
+          headers: listenBrainzToken ? { Authorization: `Token ${listenBrainzToken}` } : {},
+          signal: AbortSignal.timeout(8000),
+        })
         const popularityData = popularityResponse.ok ? await popularityResponse.json() : {}
         const candidateRecordings = popularityData.recordings || popularityData.payload?.recordings
         const recordings = Array.isArray(candidateRecordings) ? candidateRecordings : []
-        topRecordings = recordings.map((recording) => ({ title: recording.recording_name || recording.title || '', listens: recording.listen_count || recording.total_listen_count || 0, listeners: recording.listener_count || recording.total_user_count || 0 })).filter((recording) => recording.title).slice(0, 100)
+        topRecordings = recordings.map((recording, apiRank) => ({ title: recording.recording_name || recording.title || '', listens: Number(recording.listen_count || recording.total_listen_count || 0), listeners: Number(recording.listener_count || recording.total_user_count || 0), apiRank })).filter((recording) => recording.title).sort((left, right) => right.listeners - left.listeners || right.listens - left.listens || left.apiRank - right.apiRank).slice(0, 100).map((recording) => ({ title: recording.title, listens: recording.listens, listeners: recording.listeners }))
+      }
+      if (!topRecordings.length) {
+        try {
+          const deezerApi = process.env.DEEZER_API_URL || 'https://api.deezer.com'
+          const artistResponse = await net.fetch(`${deezerApi}/search/artist?q=${encodeURIComponent(artist)}&limit=5`, { signal: AbortSignal.timeout(8000) })
+          const artistData = artistResponse.ok ? await artistResponse.json() : {}
+          const deezerArtist = (Array.isArray(artistData.data) ? artistData.data : []).find((candidate) => exactArtistMatch(candidate.name, artist))
+          if (deezerArtist?.id) {
+            const tracksResponse = await net.fetch(`${deezerApi}/artist/${encodeURIComponent(deezerArtist.id)}/top?limit=100`, { signal: AbortSignal.timeout(8000) })
+            const tracksData = tracksResponse.ok ? await tracksResponse.json() : {}
+            topRecordings = (Array.isArray(tracksData.data) ? tracksData.data : []).filter((recording) => recording.title).map((recording, apiRank) => ({ title: recording.title_short || recording.title, listens: Number(recording.rank || 0), listeners: 0, apiRank })).sort((left, right) => right.listens - left.listens || left.apiRank - right.apiRank).map((recording) => ({ title: recording.title, listens: recording.listens, listeners: recording.listeners }))
+          }
+        } catch {}
+      }
+      if (!topRecordings.length) {
+        try {
+          const catalogUrl = `${process.env.APPLE_SEARCH_API_URL || 'https://itunes.apple.com/search'}?term=${encodeURIComponent(artist)}&entity=song&attribute=artistTerm&limit=100`
+          const catalogResponse = await net.fetch(catalogUrl, { signal: AbortSignal.timeout(8000) })
+          const catalogData = catalogResponse.ok ? await catalogResponse.json() : {}
+          topRecordings = (Array.isArray(catalogData.results) ? catalogData.results : []).filter((recording) => recording.kind === 'song' && catalogArtistMatch(recording.artistName, artist) && recording.trackName).map((recording) => ({ title: recording.trackName, listens: 0, listeners: 0 })).slice(0, 100)
+        } catch {}
       }
 
       if (!biography || (!profile && !background)) {
@@ -656,7 +683,7 @@ app.whenReady().then(async () => {
         }
       }
 
-      const images = { profile, background, biography, genres, links, topRecordings, requestedArtist: normalizedArtistName(artist), resolvedArtist, cachedAt: Date.now() }
+      const images = { profile, background, biography, genres, links, topRecordings, rankingVersion: artistRankingVersion, requestedArtist: normalizedArtistName(artist), resolvedArtist, cachedAt: Date.now() }
       artistImageCache[artist] = images
       await fs.writeFile(artistCachePath(), JSON.stringify(artistImageCache), 'utf8')
       return images

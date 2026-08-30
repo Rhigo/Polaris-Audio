@@ -48,11 +48,11 @@ const artistServer = createServer((request, response) => {
   response.setHeader('Content-Type', 'application/json')
   if (url.pathname === '/release') {
     updateRequests += 1
-    return response.end(JSON.stringify({ tag_name: 'v1.0.5', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.5', assets: [{ name: 'Polaris-1.0.5-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.5/Polaris-1.0.5-Portable.exe' }] }))
+    return response.end(JSON.stringify({ tag_name: 'v1.0.6', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.6', assets: [{ name: 'Polaris-1.0.6-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.6/Polaris-1.0.6-Portable.exe' }] }))
   }
   if (url.pathname === '/audiodb') return response.end(JSON.stringify({ artists: [{ strArtist: 'Cold Play Tribute', strBiographyEN: 'Wrong artist.', strMusicBrainzID: 'wrong-mbid' }, { strArtist: 'Coldplay', strBiographyEN: 'A test biography.', strGenre: 'Alternative', strMusicBrainzID: 'test-mbid', strWebsite: 'coldplay.com' }] }))
   if (url.pathname.includes('/artist/test-mbid')) return response.end(JSON.stringify({ relations: [{ url: { resource: 'https://instagram.com/coldplay' } }] }))
-  if (url.pathname.includes('/top-recordings-for-artist/')) return response.end(JSON.stringify({ recordings: [{ recording_name: 'Polaris Test Tone', listen_count: 500, listener_count: 300 }, { recording_name: 'Cloud Only Song', listen_count: 900, listener_count: 700 }] }))
+  if (url.pathname.includes('/top-recordings-for-artist/')) return response.end(JSON.stringify({ recordings: [{ recording_name: 'Polaris Test Tone (2026 Remaster)', listen_count: 500, listener_count: 300 }, { recording_name: 'Cloud Only Song', listen_count: 900, listener_count: 700 }] }))
   if (url.pathname === '/wiki') return response.end(JSON.stringify({ query: { search: [{ title: 'Wrong Hard Life' }, { title: 'Hard Life (band)' }] } }))
   if (url.pathname.startsWith('/summary/')) return response.end(JSON.stringify({ description: 'English alternative rock band', extract: 'Verified encyclopedia biography.', thumbnail: { source: 'https://example.com/hard-life.jpg' } }))
   response.statusCode = 404
@@ -105,7 +105,7 @@ const app = await electron.launch({
 try {
   const page = await app.firstWindow()
   page.on('console', (message) => console.log(`[renderer:${message.type()}] ${message.text()}`))
-  await page.getByText('Polaris 1.0.5 is available').waitFor({ timeout: 5000 })
+  await page.getByText('Polaris 1.0.6 is available').waitFor({ timeout: 5000 })
   await page.getByRole('button', { name: 'Dismiss update' }).click()
   await page.getByRole('button', { name: 'Songs', exact: true }).click()
   await page.getByRole('button', { name: 'Play Polaris Test Tone' }).click()
@@ -223,6 +223,10 @@ try {
   await page.getByRole('button', { name: 'Instagram' }).waitFor({ timeout: 10000 })
   await page.getByText('A test biography.').waitFor()
   if (await page.getByText('Cloud Only Song').count()) throw new Error('Artist popularity rendered a song that is not in the local library')
+  const popularTracks = await page.locator('.artist-detail > .track-list').first().locator('.track-name').allTextContents()
+  if (JSON.stringify(popularTracks) !== JSON.stringify(['Polaris Test Tone', 'Skip Target'])) throw new Error(`Artist popularity order was incorrect: ${JSON.stringify(popularTracks)}`)
+  const popularityPayload = await page.evaluate(() => window.polaris.getArtistImage('Coldplay'))
+  if (popularityPayload.topRecordings?.[0]?.title !== 'Cloud Only Song') throw new Error(`Artist popularity scores were not sorted: ${JSON.stringify(popularityPayload.topRecordings)}`)
   const fallbackArtist = await page.evaluate(() => window.polaris.getArtistImage('Hard Life'))
   if (fallbackArtist.biography !== 'Verified encyclopedia biography.' || fallbackArtist.resolvedArtist !== 'Hard Life (band)') throw new Error(`Artist identity fallback failed: ${JSON.stringify(fallbackArtist)}`)
   await page.getByRole('button', { name: 'Go back' }).click()
@@ -285,11 +289,11 @@ try {
     return track ? (await fetch(track.url, { headers: { Range: 'bytes=0-43' } })).status : 0
   }, secondaryTrackPath)
   if (secondaryMediaStatus !== 206) throw new Error(`Secondary source media was not authorized: ${secondaryMediaStatus}`)
-  await page.getByText('Polaris 1.0.5 is ready to download.').waitFor()
+  await page.getByText('Polaris 1.0.6 is ready to download.').waitFor()
   await page.getByRole('button', { name: 'Check for updates' }).click()
-  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.5 is ready to download.'))
+  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.6 is ready to download.'))
   if (updateRequests < 2) throw new Error(`Manual update check did not reach the release endpoint: ${updateRequests}`)
-  await page.getByRole('button', { name: 'Get version 1.0.5' }).waitFor()
+  await page.getByRole('button', { name: 'Get version 1.0.6' }).waitFor()
   const titleLogo = page.locator('.wordmark img')
   await titleLogo.waitFor()
   if (!await titleLogo.evaluate((image) => image.complete && image.naturalWidth > 0)) throw new Error('Application logo did not load')

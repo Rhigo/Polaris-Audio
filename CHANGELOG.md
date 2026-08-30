@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.5 - 2026-08-30
+
+- Ranked artist-page songs using explicit global popularity data, with public fallbacks that do not require personal credentials.
+- Improved matching for remastered, explicit, featured, live, and other title variants.
+- Kept artist top tens limited to locally owned music while filling open positions with local fallback tracks.
+- Refreshed stale artist caches so corrected rankings appear immediately after updating.
+
 ## 1.0.4 - 2026-08-30
 
 - Added multiple simultaneous local, mapped-drive, and NAS music sources with automatic migration from the original single-folder library.
