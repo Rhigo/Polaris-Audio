@@ -128,6 +128,15 @@ try {
   await page.getByRole('heading', { name: 'Songs' }).waitFor()
   if (await page.getByRole('button', { name: 'Go back' }).count()) throw new Error('Detail history was not cleared by sidebar navigation')
 
+  await page.getByRole('button', { name: 'Genres', exact: true }).click()
+  await page.getByRole('heading', { name: 'Genres' }).waitFor()
+  await page.getByRole('button', { name: /Test 1 songs/ }).click()
+  await page.getByRole('heading', { name: 'Test', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Decades', exact: true }).click()
+  await page.getByRole('button', { name: /2020s 1 songs/ }).click()
+  await page.getByRole('heading', { name: '2020s', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Songs', exact: true }).click()
+
   const sort = page.locator('.sort-control select')
   await sort.selectOption('title-desc')
   if (await sort.inputValue() !== 'title-desc') throw new Error('Song sorting did not update')
@@ -159,6 +168,13 @@ try {
   await page.getByRole('button', { name: 'Play Polaris Test Tone' }).waitFor()
   const savedPlaylist = await page.evaluate(() => window.polaris.getLibrary().then((value) => value.playlists[0]))
   if (savedPlaylist?.name !== 'Moonlight' || savedPlaylist.trackIds.length !== 1) throw new Error(`Playlist persistence failed: ${JSON.stringify(savedPlaylist)}`)
+
+  await page.getByRole('button', { name: 'Thumbs up' }).click()
+  await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.liked.length === 1 && value.disliked.length === 0))
+  await page.getByRole('button', { name: 'Thumbs down' }).click()
+  await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.liked.length === 0 && value.disliked.length === 1))
+  await page.getByRole('button', { name: 'Add to playlist' }).click()
+  await page.locator('.player-playlist-menu').getByRole('button', { name: 'Moonlight' }).click()
 
   await page.getByRole('button', { name: 'Supermix', exact: true }).click()
   await page.getByRole('heading', { name: 'Supermix' }).waitFor()
@@ -230,7 +246,7 @@ try {
   await fs.writeFile(path.join(music, 'Automatically Added.wav'), createWave(1))
   await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.tracks.some((track) => track.title === 'Automatically Added')), null, { timeout: 15000 })
 
-  console.log(JSON.stringify({ playback, range, scanMs: Math.round(scanMs), mediaGuard: 'passed', automaticLibraryUpdate: 'passed', lyrics: 'loaded', navigation: 'passed', playlists: 'passed', supermix: 'passed', settings: 'passed', search: 'passed', sorting: 'passed', rowMenu: 'passed', immersivePlayer: 'passed' }, null, 2))
+  console.log(JSON.stringify({ playback, range, scanMs: Math.round(scanMs), mediaGuard: 'passed', automaticLibraryUpdate: 'passed', discovery: 'passed', feedback: 'passed', lyrics: 'loaded', navigation: 'passed', playlists: 'passed', supermix: 'passed', settings: 'passed', search: 'passed', sorting: 'passed', rowMenu: 'passed', immersivePlayer: 'passed' }, null, 2))
 } finally {
   await app.close()
   lyricsServer.close()

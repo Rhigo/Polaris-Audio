@@ -1,26 +1,27 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Album, ArrowLeft, AudioLines, ChevronDown, Disc3, FolderPlus, Heart, Home, Library as LibraryIcon,
-  GripVertical, ListMusic, Maximize2, Mic2, MoreHorizontal, Music2, Pause, Play, Plus, RefreshCw,
+  ChevronRight, GripVertical, ListMusic, Maximize2, Mic2, MoreHorizontal, Music2, Pause, Play, Plus, RefreshCw,
   Repeat, Repeat1, Search, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Sparkles,
-  Settings as SettingsIcon, Trash2, UserRound, Volume1, Volume2, VolumeX, WandSparkles, X,
+  Settings as SettingsIcon, ThumbsDown, ThumbsUp, Trash2, UserRound, Volume1, Volume2, VolumeX, WandSparkles, X,
 } from 'lucide-react'
 import type { ArtistImages, Library, LyricLine, Playlist, ScanProgress, Settings, Track } from './types'
 import './App.css'
 
-type View = 'home' | 'supermix' | 'recent' | 'artists' | 'albums' | 'songs' | 'favorites' | 'playlist' | 'settings'
+type View = 'home' | 'supermix' | 'recent' | 'artists' | 'albums' | 'songs' | 'genres' | 'decades' | 'favorites' | 'playlist' | 'settings'
 type RepeatMode = 'off' | 'all' | 'one'
 type SearchTab = 'songs' | 'albums' | 'artists'
 type SongSort = 'title-asc' | 'title-desc' | 'artist-asc' | 'album-asc' | 'newest' | 'duration'
 type AlbumSort = 'title-asc' | 'title-desc' | 'artist-asc' | 'year-desc' | 'year-asc'
 type ArtistSort = 'name-asc' | 'name-desc' | 'songs-desc' | 'songs-asc'
-interface Location { view: View; artist: string; album: string; playlist: string; query: string; searchTab: SearchTab }
+interface Location { view: View; artist: string; album: string; playlist: string; genre: string; decade: number; query: string; searchTab: SearchTab }
 
 const defaultSettings: Settings = {
   onlineLyrics: true, lyricsContrast: 'high', visualizerStyle: 'spectrum', visualizerIntensity: 0.55,
   visualizerOpacity: 0.24, visualizerColor: '#f6f3ed', reduceMotion: false, volume: 0.82, shuffle: false, repeat: 'off',
+  libraryExpanded: true, dynamicBackground: true,
 }
-const emptyLibrary: Library = { folder: '', tracks: [], history: [], favorites: [], playlists: [], settings: defaultSettings }
+const emptyLibrary: Library = { folder: '', tracks: [], history: [], favorites: [], liked: [], disliked: [], playlists: [], settings: defaultSettings }
 const artColors = ['#cd493f', '#18737f', '#a37736', '#485ca8', '#9c4368', '#557248']
 const rowBatchSize = 250
 
@@ -79,7 +80,7 @@ function buildSupermix(library: Library, variation: number) {
   }
   const score = (track: Track) => {
     const historyIndex = recent.get(track.id)
-    const affinity = (library.favorites.includes(track.id) ? 20 : 0) + (favoriteArtists.get(track.artist) || 0) * 4 + (favoriteGenres.get(track.genre) || 0) * 2
+    const affinity = (library.favorites.includes(track.id) ? 20 : 0) + (library.liked.includes(track.id) ? 35 : 0) - (library.disliked.includes(track.id) ? 1000 : 0) + (favoriteArtists.get(track.artist) || 0) * 4 + (favoriteGenres.get(track.genre) || 0) * 2
     const recency = historyIndex === undefined ? 6 : historyIndex < 20 ? -10 + historyIndex * 0.3 : 2
     const noise = Math.abs(Math.sin([...track.id].reduce((sum, char) => sum + char.charCodeAt(0), variation + 1))) * 8
     return affinity + recency + noise
@@ -116,7 +117,7 @@ function Artwork({ track, size = 'medium' }: { track?: Track; size?: 'small' | '
 function IconButton({ label, active, disabled = false, children, onClick, className = '' }: {
   label: string; active?: boolean; disabled?: boolean; children: ReactNode; onClick?: () => void; className?: string
 }) {
-  return <button className={`icon-button ${active ? 'active' : ''} ${className}`} disabled={disabled} onClick={onClick} title={label} aria-label={label}>{children}</button>
+    return <button className={`icon-button ${active ? 'active' : ''} ${className}`} disabled={disabled} onClick={(event) => { event.stopPropagation(); if (onClick) onClick() }} title={label} aria-label={label}>{children}</button>
 }
 
 function LyricsDisplay({ lines, loading, activeLine, onSeek, onBack, contrast = 'high', className = '' }: {
@@ -203,6 +204,8 @@ function App() {
   const [selectedAlbum, setSelectedAlbum] = useState('')
   const [selectedArtist, setSelectedArtist] = useState('')
   const [selectedPlaylist, setSelectedPlaylist] = useState('')
+  const [selectedGenre, setSelectedGenre] = useState('')
+  const [selectedDecade, setSelectedDecade] = useState(0)
   const [playlistName, setPlaylistName] = useState('')
   const [renameDraft, setRenameDraft] = useState('')
   const [renamingPlaylist, setRenamingPlaylist] = useState(false)
@@ -255,7 +258,7 @@ function App() {
   useEffect(() => {
     const navigate = (event: Event) => {
       const track = (event as CustomEvent<Track>).detail
-      setDetailHistory((history) => [...history, { view, artist: selectedArtist, album: selectedAlbum, playlist: selectedPlaylist, query, searchTab }])
+      setDetailHistory((history) => [...history, { view, artist: selectedArtist, album: selectedAlbum, playlist: selectedPlaylist, genre: selectedGenre, decade: selectedDecade, query, searchTab }])
       setQuery('')
       setSelectedArtist(track.albumArtist || track.artist)
       setSelectedAlbum('')
@@ -264,7 +267,7 @@ function App() {
     }
     window.addEventListener('polaris:open-artist', navigate)
     return () => window.removeEventListener('polaris:open-artist', navigate)
-  }, [query, searchTab, selectedAlbum, selectedArtist, selectedPlaylist, view])
+  }, [query, searchTab, selectedAlbum, selectedArtist, selectedDecade, selectedGenre, selectedPlaylist, view])
 
   useEffect(() => {
     if (!current) return
@@ -349,6 +352,13 @@ function App() {
     window.polaris?.saveState({ favorites })
   }
 
+  const rateTrack = (id: string, rating: 'up' | 'down') => {
+    const liked = rating === 'up' ? (library.liked.includes(id) ? library.liked.filter((item) => item !== id) : [...library.liked, id]) : library.liked.filter((item) => item !== id)
+    const disliked = rating === 'down' ? (library.disliked.includes(id) ? library.disliked.filter((item) => item !== id) : [...library.disliked, id]) : library.disliked.filter((item) => item !== id)
+    setLibrary((value) => ({ ...value, liked, disliked }))
+    window.polaris?.saveState({ liked, disliked })
+  }
+
   const persistLibraryState = (state: Partial<Pick<Library, 'playlists' | 'settings'>>) => {
     setLibrary((value) => ({ ...value, ...state }))
     window.polaris?.saveState(state)
@@ -419,18 +429,26 @@ function App() {
   const libraryIndex = useMemo(() => {
     const artistCounts = new Map<string, number>()
     const tracksById = new Map<string, Track>()
+    const tracksByGenre = new Map<string, Track[]>()
+    const tracksByDecade = new Map<number, Track[]>()
+    const tracksByArtist = new Map<string, Track[]>()
+    const tracksByAlbum = new Map<string, Track[]>()
     const searchText = new Map<string, { all: string; title: string; album: string; artist: string }>()
     for (const track of library.tracks) {
       tracksById.set(track.id, track)
+      if (track.genre) tracksByGenre.set(track.genre, [...(tracksByGenre.get(track.genre) || []), track])
+      if (track.year) { const decade = Math.floor(track.year / 10) * 10; tracksByDecade.set(decade, [...(tracksByDecade.get(decade) || []), track]) }
+      for (const artist of new Set([track.artist, track.albumArtist].filter(Boolean))) tracksByArtist.set(artist, [...(tracksByArtist.get(artist) || []), track])
+      tracksByAlbum.set(`${track.albumArtist}\0${track.album}`, [...(tracksByAlbum.get(`${track.albumArtist}\0${track.album}`) || []), track])
       const names = new Set([track.artist, track.albumArtist].filter(Boolean))
       for (const name of names) artistCounts.set(name, (artistCounts.get(name) || 0) + 1)
       searchText.set(track.id, {
-        all: `${track.title} ${track.artist} ${track.albumArtist} ${track.album}`.toLowerCase(),
+        all: `${track.title} ${track.artist} ${track.albumArtist} ${track.album} ${track.genre} ${track.year} ${track.year ? Math.floor(track.year / 10) * 10 + 's' : ''}`.toLowerCase(),
         title: track.title.toLowerCase(), album: track.album.toLowerCase(), artist: `${track.artist} ${track.albumArtist}`.toLowerCase(),
       })
     }
     return {
-      artistCounts, tracksById, searchText,
+      artistCounts, tracksById, tracksByGenre, tracksByDecade, tracksByArtist, tracksByAlbum, searchText,
       albums: uniqueBy(library.tracks, (track) => `${track.albumArtist}\0${track.album}`),
       artists: uniqueBy(library.tracks, (track) => track.artist || track.albumArtist),
     }
@@ -463,7 +481,7 @@ function App() {
     }
   }, [albumSort, artistSort, library.tracks, libraryIndex, normalizedQuery, songSort])
 
-  const rememberLocation = () => setDetailHistory((history) => [...history, { view, artist: selectedArtist, album: selectedAlbum, playlist: selectedPlaylist, query, searchTab }])
+  const rememberLocation = () => setDetailHistory((history) => [...history, { view, artist: selectedArtist, album: selectedAlbum, playlist: selectedPlaylist, genre: selectedGenre, decade: selectedDecade, query, searchTab }])
   const openAlbum = (track: Track) => { rememberLocation(); setQuery(''); setSelectedAlbum(track.album); setSelectedArtist(track.albumArtist); setView('albums'); setOpenRowMenu('') }
   const openArtist = (track: Track, artist = track.artist || track.albumArtist) => { rememberLocation(); setQuery(''); setSelectedArtist(artist); setSelectedAlbum(''); setView('artists'); setOpenRowMenu('') }
   const goBack = () => {
@@ -473,6 +491,8 @@ function App() {
       setSelectedArtist(previous.artist)
       setSelectedAlbum(previous.album)
       setSelectedPlaylist(previous.playlist)
+      setSelectedGenre(previous.genre)
+      setSelectedDecade(previous.decade)
       setQuery(previous.query)
       setSearchTab(previous.searchTab)
       setDetailHistory((history) => history.slice(0, -1))
@@ -487,6 +507,8 @@ function App() {
     setSelectedArtist('')
     setSelectedAlbum('')
     if (nextView !== 'playlist') setSelectedPlaylist('')
+    if (nextView !== 'genres') setSelectedGenre('')
+    if (nextView !== 'decades') setSelectedDecade(0)
     setQuery('')
     setDetailHistory([])
   }
@@ -559,12 +581,12 @@ function App() {
     }
     if (view === 'settings') return <section className="settings-page"><PageHeading eyebrow="Polaris" title="Settings" subtitle="Tune your library, lyrics, playback, and visualizer." /><div className="settings-groups"><div className="settings-group"><h2>Library</h2><p>{library.folder || 'No music folder selected'}</p><button className="secondary-button" onClick={rescan}><RefreshCw />{library.folder ? 'Rescan library' : 'Choose folder'}</button></div><div className="settings-group"><h2>Lyrics</h2><SettingToggle label="Online fallback" description="Use LRCLIB when local and embedded lyrics are unavailable." checked={library.settings.onlineLyrics} onChange={(checked) => updateSettings({ onlineLyrics: checked })} /><label>Contrast<select value={library.settings.lyricsContrast} onChange={(event) => updateSettings({ lyricsContrast: event.target.value as Settings['lyricsContrast'] })}><option value="normal">Normal</option><option value="high">High</option><option value="maximum">Maximum</option></select></label></div><div className="settings-group"><h2>Visualizer</h2><label>Style<select value={library.settings.visualizerStyle} onChange={(event) => updateSettings({ visualizerStyle: event.target.value as Settings['visualizerStyle'] })}><option value="off">Off</option><option value="spectrum">Spectrum</option><option value="waveform">Waveform</option><option value="ambient">Ambient bars</option></select></label><label>Intensity<input type="range" min="0.1" max="1" step="0.05" value={library.settings.visualizerIntensity} onChange={(event) => updateSettings({ visualizerIntensity: Number(event.target.value) })} /></label><label>Opacity<input type="range" min="0.05" max="0.6" step="0.05" value={library.settings.visualizerOpacity} onChange={(event) => updateSettings({ visualizerOpacity: Number(event.target.value) })} /></label><label>Color<input type="color" value={library.settings.visualizerColor} onChange={(event) => updateSettings({ visualizerColor: event.target.value })} /></label><SettingToggle label="Reduce motion" description="Keep visual effects restrained." checked={library.settings.reduceMotion} onChange={(checked) => updateSettings({ reduceMotion: checked })} /></div></div></section>
     if (selectedAlbum) {
-      const albumTracks = library.tracks.filter((track) => track.album === selectedAlbum && track.albumArtist === selectedArtist).sort((a, b) => a.disc - b.disc || a.track - b.track)
+      const albumTracks = [...(libraryIndex.tracksByAlbum.get(`${selectedArtist}\0${selectedAlbum}`) || [])].sort((a, b) => a.disc - b.disc || a.track - b.track)
       const lead = albumTracks[0]
       return <section className="detail-page" style={{ '--detail-image': lead.artwork ? `url("${lead.artwork}")` : 'none' } as React.CSSProperties}><div className="detail-backdrop" /><div className="detail-hero"><Artwork track={lead} size="large" /><div><p className="eyebrow">Album</p><h1>{lead.album}</h1><button className="artist-link" onClick={() => openArtist(lead)}>{lead.albumArtist}</button><p>{lead.year || 'Unknown year'} · {albumTracks.length} songs · {formatTime(albumTracks.reduce((sum, item) => sum + item.duration, 0))}</p><button className="round-play" onClick={() => playTrack(lead, albumTracks)}><Play /></button></div></div>{renderRows(albumTracks)}</section>
     }
     if (selectedArtist) {
-      const artistTracks = library.tracks.filter((track) => track.artist === selectedArtist || track.albumArtist === selectedArtist)
+      const artistTracks = libraryIndex.tracksByArtist.get(selectedArtist) || []
       const fetchedImages = artistImage.artist === selectedArtist ? artistImage.images : { profile: '', background: '' }
       const fallbackArtwork = artistTracks.find((track) => track.artwork)?.artwork || ''
       const profileImage = fetchedImages.profile || fallbackArtwork
@@ -574,6 +596,14 @@ function App() {
       return <section className="detail-page artist-detail"><div className="detail-backdrop">{backgroundImage && <img src={backgroundImage} alt="" />}</div><div className="artist-hero">{profileImage ? <div className="artist-hero-photo"><img src={profileImage} alt={`${selectedArtist} profile`} /></div> : <div className="artist-hero-photo"><UserRound /></div>}<div><p className="eyebrow">Artist</p><h1>{selectedArtist}</h1><p>{uniqueBy(artistTracks, (track) => track.album).length} albums · {artistTracks.length} songs · {recentArtistTracks.length} recent plays</p>{artistGenres.length ? <div className="genre-list">{artistGenres.map((genre) => <span key={genre}>{genre}</span>)}</div> : null}<button className="round-play heading-play" onClick={() => playTrack(artistTracks[0], artistTracks)}><Play /></button></div></div>{fetchedImages.biography && <p className="artist-biography">{fetchedImages.biography}</p>}<h2 className="section-title">Popular in your library</h2>{renderRows([...artistTracks].sort((left, right) => (library.history.indexOf(left.id) < 0 ? 999 : library.history.indexOf(left.id)) - (library.history.indexOf(right.id) < 0 ? 999 : library.history.indexOf(right.id))).slice(0, 10))}{recentArtistTracks.length > 0 && <><h2 className="section-title">Recently played</h2>{renderRows(recentArtistTracks.slice(0, 8))}</>}<h2 className="section-title">Albums</h2><div className="card-grid">{uniqueBy(artistTracks, (track) => track.album).map((track) => <AlbumCard key={track.album} track={track} onClick={() => openAlbum(track)} />)}</div></section>
     }
     if (view === 'songs') return <section><PageHeading eyebrow="Library" title="Songs" subtitle={`${library.tracks.length.toLocaleString()} tracks`} /><div className="list-toolbar"><SortControl value={songSort} onChange={setSongSort} options={[{ value: 'title-asc', label: 'Title A–Z' }, { value: 'title-desc', label: 'Title Z–A' }, { value: 'artist-asc', label: 'Artist A–Z' }, { value: 'album-asc', label: 'Album A–Z' }, { value: 'newest', label: 'Recently added' }, { value: 'duration', label: 'Longest first' }]} /></div>{renderRows(songs)}</section>
+    if (view === 'genres') {
+      if (selectedGenre) { const tracks = libraryIndex.tracksByGenre.get(selectedGenre) || []; return <section><PageHeading eyebrow="Genre" title={selectedGenre} subtitle={`${tracks.length.toLocaleString()} songs`} />{renderRows(tracks)}</section> }
+      return <section><PageHeading eyebrow="Discover" title="Genres" subtitle={`${libraryIndex.tracksByGenre.size.toLocaleString()} sounds in your library`} /><div className="discovery-grid">{[...libraryIndex.tracksByGenre.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([genre, tracks], index) => <button className="discovery-tile" style={{ '--tile-index': index } as React.CSSProperties} key={genre} onClick={() => { rememberLocation(); setSelectedGenre(genre) }}><Artwork track={tracks.find((track) => track.artwork) || tracks[0]} size="large" /><span><strong>{genre}</strong><small>{tracks.length} songs</small></span></button>)}</div></section>
+    }
+    if (view === 'decades') {
+      if (selectedDecade) { const tracks = libraryIndex.tracksByDecade.get(selectedDecade) || []; return <section><PageHeading eyebrow="Decade" title={`${selectedDecade}s`} subtitle={`${tracks.length.toLocaleString()} songs`} />{renderRows(tracks)}</section> }
+      return <section><PageHeading eyebrow="Discover" title="Decades" subtitle="Travel through your collection" /><div className="discovery-grid discovery-grid--decades">{[...libraryIndex.tracksByDecade.entries()].sort(([left], [right]) => right - left).map(([decade, tracks], index) => <button className="discovery-tile" style={{ '--tile-index': index } as React.CSSProperties} key={decade} onClick={() => { rememberLocation(); setSelectedDecade(decade) }}><Artwork track={tracks.find((track) => track.artwork) || tracks[0]} size="large" /><span><strong>{decade}s</strong><small>{tracks.length} songs</small></span></button>)}</div></section>
+    }
     if (view === 'albums') return <section><PageHeading eyebrow="Library" title="Albums" subtitle={`${albums.length.toLocaleString()} releases`} /><div className="list-toolbar"><SortControl value={albumSort} onChange={setAlbumSort} options={[{ value: 'title-asc', label: 'Album A–Z' }, { value: 'title-desc', label: 'Album Z–A' }, { value: 'artist-asc', label: 'Artist A–Z' }, { value: 'year-desc', label: 'Newest first' }, { value: 'year-asc', label: 'Oldest first' }]} /></div><div className="card-grid">{albums.map((track) => <AlbumCard key={`${track.albumArtist}-${track.album}`} track={track} onClick={() => openAlbum(track)} />)}</div></section>
     if (view === 'artists') return <section><PageHeading eyebrow="Library" title="Artists" subtitle={`${artists.length.toLocaleString()} artists`} /><div className="list-toolbar"><SortControl value={artistSort} onChange={setArtistSort} options={[{ value: 'name-asc', label: 'Artist A–Z' }, { value: 'name-desc', label: 'Artist Z–A' }, { value: 'songs-desc', label: 'Most songs' }, { value: 'songs-asc', label: 'Fewest songs' }]} /></div><div className="artist-grid">{artists.map((track) => { const name = track.artist || track.albumArtist; return <ArtistCard key={name} artist={name} count={artistCount(name)} onClick={() => openArtist(track, name)} /> })}</div></section>
     if (view === 'favorites') return <section><PageHeading eyebrow="Collection" title="Loved Songs" subtitle={`${library.favorites.length} favorites`} />{renderRows(library.tracks.filter((track) => library.favorites.includes(track.id)))}</section>
@@ -597,11 +627,8 @@ function App() {
           <NavButton icon={<Home />} label="Home" active={view === 'home'} onClick={() => showView('home')} />
           <NavButton icon={<WandSparkles />} label="Supermix" active={view === 'supermix'} onClick={() => showView('supermix')} />
           <NavButton icon={<RefreshCw />} label="Recently Played" active={view === 'recent'} onClick={() => showView('recent')} />
-          <p>Library</p>
-          <NavButton icon={<UserRound />} label="Artists" active={view === 'artists'} onClick={() => showView('artists')} />
-          <NavButton icon={<Album />} label="Albums" active={view === 'albums'} onClick={() => showView('albums')} />
-          <NavButton icon={<Music2 />} label="Songs" active={view === 'songs'} onClick={() => showView('songs')} />
-          <NavButton icon={<Heart />} label="Loved Songs" active={view === 'favorites'} onClick={() => showView('favorites')} />
+          <button className="nav-heading" aria-expanded={library.settings.libraryExpanded} onClick={() => updateSettings({ libraryExpanded: !library.settings.libraryExpanded })}><span>Library</span>{library.settings.libraryExpanded ? <ChevronDown /> : <ChevronRight />}</button>
+          {library.settings.libraryExpanded && <div className="library-links"><NavButton icon={<UserRound />} label="Artists" active={view === 'artists'} onClick={() => showView('artists')} /><NavButton icon={<Album />} label="Albums" active={view === 'albums'} onClick={() => showView('albums')} /><NavButton icon={<Music2 />} label="Songs" active={view === 'songs'} onClick={() => showView('songs')} /><NavButton icon={<Disc3 />} label="Genres" active={view === 'genres'} onClick={() => showView('genres')} /><NavButton icon={<Sparkles />} label="Decades" active={view === 'decades'} onClick={() => showView('decades')} /><NavButton icon={<Heart />} label="Loved Songs" active={view === 'favorites'} onClick={() => showView('favorites')} /></div>}
           <div className="playlist-heading"><p>Playlists</p></div>
           <div className="playlist-create"><input value={playlistName} onChange={(event) => setPlaylistName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') createPlaylist() }} placeholder="New playlist" aria-label="New playlist name" /><IconButton label="Create playlist" disabled={!playlistName.trim()} onClick={createPlaylist}><Plus /></IconButton></div>
           <div className="playlist-nav">{library.playlists.map((playlist) => <button key={playlist.id} className={view === 'playlist' && selectedPlaylist === playlist.id ? 'active' : ''} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addTrackToPlaylist(playlist.id, event.dataTransfer.getData('text/polaris-track')) }} onClick={() => { setSelectedPlaylist(playlist.id); showView('playlist') }}><ListMusic /><span>{playlist.name}</span><small>{playlist.trackIds.length}</small></button>)}</div>
@@ -613,14 +640,14 @@ function App() {
       {playbackError && <div className="playback-error"><AudioLines /><span><strong>Could not play this song</strong><small>{playbackError}</small></span><IconButton label="Dismiss" onClick={() => setPlaybackError('')}><X /></IconButton></div>}
       {scan && <div className="scan-toast"><RefreshCw className="spin" /><span><strong>Reading your library</strong><small>{scan.total ? `${scan.current.toLocaleString()} of ${scan.total.toLocaleString()} tracks` : 'Finding music files…'}</small></span>{scan.total > 0 && <progress value={scan.current} max={scan.total} />}</div>}
       {(lyricsOpen || queueOpen) && !(mobilePlayer && lyricsOpen) && <aside className="right-panel"><div className="panel-header"><div className="segmented"><button className={lyricsOpen ? 'active' : ''} disabled={lyricsUnavailable} onClick={() => { setLyricsOpen(true); setQueueOpen(false) }}>Lyrics</button><button className={queueOpen ? 'active' : ''} onClick={() => { setQueueOpen(true); setLyricsOpen(false) }}>Queue</button></div><IconButton label="Close panel" onClick={() => { setLyricsOpen(false); setQueueOpen(false) }}><X /></IconButton></div>{lyricsOpen ? <LyricsDisplay contrast={library.settings.lyricsContrast} lines={displayLyrics} loading={lyricsLoading} activeLine={activeLyric} onSeek={seekTo} /> : <div className="queue"><p>Up next</p>{queue.slice(queueIndex + 1).map((track, index) => <div className="queue-item" key={`${track.id}-${index}`}><button className="queue-play" onClick={() => { setQueueIndex(queueIndex + index + 1); setPlaying(true) }}><Artwork track={track} size="small" /></button><span><button onClick={() => { setQueueIndex(queueIndex + index + 1); setPlaying(true) }}><strong>{track.title}</strong></button><button onClick={() => openArtist(track)}><small>{track.artist}</small></button><button onClick={() => openAlbum(track)}><small>{track.album}</small></button></span><small>{formatTime(track.duration)}</small></div>)}</div>}</aside>}
-      <div className={`now-playing ${mobilePlayer ? 'expanded' : ''}`} style={{ '--player-art': current?.artwork ? `url("${current.artwork}")` : 'none' } as React.CSSProperties}>
+      <div className={`now-playing ${mobilePlayer ? 'expanded' : ''}`} style={{ '--player-art': library.settings.dynamicBackground && current?.artwork ? `url("${current.artwork}")` : 'none' } as React.CSSProperties}>
         {visualizerOpen && library.settings.visualizerStyle !== 'off' && <Visualizer analyser={analyser} running={playing && !library.settings.reduceMotion} settings={library.settings} />}
         {mobilePlayer && lyricsOpen && <LyricsDisplay contrast={library.settings.lyricsContrast} className="immersive-lyrics" lines={displayLyrics} loading={lyricsLoading} activeLine={activeLyric} onSeek={seekTo} onBack={() => setLyricsOpen(false)} />}
         <button className="mobile-collapse" aria-label="Close full player" onClick={() => setMobilePlayer(false)}><ChevronDown /></button>
         <div className="now-track">{current ? <><button className="now-art-button" onClick={() => setMobilePlayer(true)} aria-label="Open full player"><Artwork track={current} size="small" /></button><span><strong>{current.title}</strong><span className="now-links"><button onClick={() => openArtist(current)}>{current.artist}</button><span>·</span><button onClick={() => openAlbum(current)}>{current.album}</button></span></span><IconButton className="now-love" label={library.favorites.includes(current.id) ? 'Remove from loved songs' : 'Love song'} active={library.favorites.includes(current.id)} onClick={() => toggleFavorite(current.id)}><Heart /></IconButton></> : <><div className="artwork artwork--small"><Music2 /></div><span><strong>Nothing playing</strong><small>Choose a song from your library</small></span></>}</div>
         <div className="mobile-art"><Artwork track={current} size="large" /></div>
         <div className="player-center"><div className="transport"><IconButton label="Shuffle" active={shuffle} onClick={() => { const next = !shuffle; setShuffle(next); updateSettings({ shuffle: next }) }}><Shuffle /></IconButton><IconButton label="Previous" onClick={() => moveTrack(-1)}><SkipBack /></IconButton><button className="transport-play" onClick={() => current ? setPlaying(!playing) : library.tracks[0] && playTrack(library.tracks[0])} aria-label={playing ? 'Pause' : 'Play'}>{playing ? <Pause /> : <Play />}</button><IconButton label="Next" onClick={() => moveTrack(1)}><SkipForward /></IconButton><IconButton label={`Repeat ${repeat}`} active={repeat !== 'off'} onClick={() => { const next = repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off'; setRepeat(next); updateSettings({ repeat: next }) }}>{repeat === 'one' ? <Repeat1 /> : <Repeat />}</IconButton></div><div className="timeline"><span>{formatTime(elapsed)}</span><input type="range" min="0" max={duration || 1} value={elapsed} onChange={(event) => { const value = Number(event.target.value); setElapsed(value); if (audioRef.current) audioRef.current.currentTime = value }} /><span>{formatTime(duration)}</span></div></div>
-        <div className="player-tools"><IconButton label="Visualizer" active={visualizerOpen} onClick={() => { if (!visualizerOpen) { ensureAnalyser(); audioContextRef.current?.resume() }; setVisualizerOpen(!visualizerOpen) }}><SlidersHorizontal /></IconButton><IconButton label={lyricsUnavailable ? 'Lyrics unavailable' : 'Lyrics'} disabled={lyricsUnavailable} active={lyricsOpen} onClick={() => { setLyricsOpen(!lyricsOpen); setQueueOpen(false) }}><Mic2 /></IconButton><IconButton label="Queue" active={queueOpen} onClick={() => { setQueueOpen(!queueOpen); setLyricsOpen(false) }}><ListMusic /></IconButton><div className="volume">{volume === 0 ? <VolumeX /> : volume < .5 ? <Volume1 /> : <Volume2 />}<input type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => { const next = Number(event.target.value); setVolume(next); updateSettings({ volume: next }) }} /></div><IconButton label="Open full player" disabled={!current} onClick={() => setMobilePlayer(true)}><Maximize2 /></IconButton></div>
+        <div className="player-tools">{current && <><IconButton label="Thumbs up" active={library.liked.includes(current.id)} onClick={() => rateTrack(current.id, 'up')}><ThumbsUp /></IconButton><IconButton label="Thumbs down" active={library.disliked.includes(current.id)} onClick={() => rateTrack(current.id, 'down')}><ThumbsDown /></IconButton><div className="player-playlist-wrap"><IconButton label="Add to playlist" active={openRowMenu === 'player-playlists'} onClick={() => setOpenRowMenu(openRowMenu === 'player-playlists' ? '' : 'player-playlists')}><Plus /></IconButton>{openRowMenu === 'player-playlists' && <div className="player-playlist-menu">{library.playlists.length ? library.playlists.map((playlist) => <button key={playlist.id} onClick={() => { addTrackToPlaylist(playlist.id, current.id); setOpenRowMenu('') }}><ListMusic />{playlist.name}</button>) : <span>Create a playlist first</span>}</div>}</div></>}<IconButton label="Visualizer" active={visualizerOpen} onClick={() => { if (!visualizerOpen) { ensureAnalyser(); audioContextRef.current?.resume() }; setVisualizerOpen(!visualizerOpen) }}><SlidersHorizontal /></IconButton><IconButton label={lyricsUnavailable ? 'Lyrics unavailable' : 'Lyrics'} disabled={lyricsUnavailable} active={lyricsOpen} onClick={() => { setLyricsOpen(!lyricsOpen); setQueueOpen(false) }}><Mic2 /></IconButton><IconButton label="Queue" active={queueOpen} onClick={() => { setQueueOpen(!queueOpen); setLyricsOpen(false) }}><ListMusic /></IconButton><div className="volume">{volume === 0 ? <VolumeX /> : volume < .5 ? <Volume1 /> : <Volume2 />}<input type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => { const next = Number(event.target.value); setVolume(next); updateSettings({ volume: next }) }} /></div><IconButton label="Open full player" disabled={!current} onClick={() => setMobilePlayer(true)}><Maximize2 /></IconButton></div>
       </div>
     </div>
   )

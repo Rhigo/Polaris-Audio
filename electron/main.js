@@ -38,12 +38,14 @@ const mediaUrl = (filePath) => `polaris://media/${Buffer.from(filePath).toString
 const defaultSettings = {
   onlineLyrics: true, lyricsContrast: 'high', visualizerStyle: 'spectrum', visualizerIntensity: 0.55,
   visualizerOpacity: 0.24, visualizerColor: '#f6f3ed', reduceMotion: false, volume: 0.82, shuffle: false, repeat: 'off',
+  libraryExpanded: true, dynamicBackground: true,
 }
 
 function normalizeLibrary(value = {}) {
   return {
     folder: typeof value.folder === 'string' ? value.folder : '', tracks: Array.isArray(value.tracks) ? value.tracks : [],
     history: Array.isArray(value.history) ? value.history : [], favorites: Array.isArray(value.favorites) ? value.favorites : [],
+    liked: Array.isArray(value.liked) ? value.liked : [], disliked: Array.isArray(value.disliked) ? value.disliked : [],
     playlists: Array.isArray(value.playlists) ? value.playlists : [], settings: { ...defaultSettings, ...(value.settings || {}) },
   }
 }
@@ -209,6 +211,7 @@ async function scanLibrary(folder) {
   const library = {
     folder, tracks: tracks.filter(Boolean),
     history: previous.history.filter((id) => liveIds.has(id)), favorites: previous.favorites.filter((id) => liveIds.has(id)),
+    liked: previous.liked.filter((id) => liveIds.has(id)), disliked: previous.disliked.filter((id) => liveIds.has(id)),
     playlists: previous.playlists.map((playlist) => ({ ...playlist, trackIds: playlist.trackIds.filter((id) => liveIds.has(id)) })),
     settings: previous.settings,
   }
@@ -381,7 +384,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('library:save-state', async (_, state) => {
     const library = await readCache()
     const allowed = {}
-    for (const key of ['history', 'favorites', 'playlists', 'settings']) if (state && key in state) allowed[key] = state[key]
+    for (const key of ['history', 'favorites', 'liked', 'disliked', 'playlists', 'settings']) if (state && key in state) allowed[key] = state[key]
     await writeCache(normalizeLibrary({ ...library, ...allowed }))
   })
   ipcMain.handle('lyrics:get', async (_, lyricPath, embedded, trackPath, track) => {

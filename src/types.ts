@@ -43,6 +43,8 @@ export interface Settings {
   volume: number
   shuffle: boolean
   repeat: 'off' | 'all' | 'one'
+  libraryExpanded: boolean
+  dynamicBackground: boolean
 }
 
 export interface Library {
@@ -50,13 +52,17 @@ export interface Library {
   tracks: Track[]
   history: string[]
   favorites: string[]
+  liked: string[]
+  disliked: string[]
   playlists: Playlist[]
   settings: Settings
 }
 
 export interface LyricLine { time: number | null; text: string }
 export interface ScanProgress { current: number; total: number }
-export interface ArtistImages { profile: string; background: string; biography?: string; genres?: string[]; cachedAt?: number }
+export interface ArtistLink { label: string; url: string }
+export interface PopularRecording { title: string; listens: number; listeners: number }
+export interface ArtistImages { profile: string; background: string; biography?: string; genres?: string[]; links?: ArtistLink[]; topRecordings?: PopularRecording[]; cachedAt?: number }
 
 declare global {
   interface Window {
@@ -64,7 +70,7 @@ declare global {
       getLibrary: () => Promise<Library>
       chooseFolder: () => Promise<Library | null>
       rescan: (folder: string) => Promise<Library>
-      saveState: (state: Partial<Pick<Library, 'history' | 'favorites' | 'playlists' | 'settings'>>) => Promise<void>
+      saveState: (state: Partial<Pick<Library, 'history' | 'favorites' | 'liked' | 'disliked' | 'playlists' | 'settings'>>) => Promise<void>
       getLyrics: (lyricPath: string, embedded?: string, trackPath?: string, track?: Pick<Track, 'title' | 'artist' | 'album' | 'duration'>) => Promise<LyricLine[]>
       getArtistImage: (artist: string) => Promise<ArtistImages>
       onScanProgress: (callback: (progress: ScanProgress) => void) => () => void
