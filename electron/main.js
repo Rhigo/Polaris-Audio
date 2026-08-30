@@ -95,7 +95,7 @@ async function discoverFiles(root) {
   const found = []
   const sidecars = new Map()
   const pending = [root]
-  const workers = Math.min(12, Math.max(4, os.availableParallelism?.() || 4))
+  const workers = Math.min(32, Math.max(8, os.availableParallelism?.() || 4))
   while (pending.length) {
     const directories = pending.splice(0, workers)
     const batches = await Promise.all(directories.map(async (directory) => {
@@ -151,17 +151,25 @@ function embeddedLyrics(common) {
   }).filter(Boolean).join('\n')
 }
 
-async function extractTrack(filePath, index, sidecars, stats) {
-  const metadata = await parseFile(filePath, { duration: true })
+async function extractTrack(filePath, index, sidecars, statsPromise, artworkFiles) {
+  const [metadata, stats] = await Promise.all([parseFile(filePath, { duration: false }), statsPromise])
   const common = metadata.common
   const cover = selectCover(common.picture)
   let artwork = ''
   if (cover) {
     const extension = cover.format.includes('png') ? 'png' : 'jpg'
-    const artworkFile = path.join(artworkPath(), `${createHash('sha1').update(cover.data).digest('hex')}.${extension}`)
-    try { await fs.writeFile(artworkFile, cover.data, { flag: 'wx' }) } catch (error) { if (error?.code !== 'EEXIST') throw error }
+    const artworkName = `${createHash('sha1').update(cover.data).digest('hex')}.${extension}`
+    const artworkFile = path.join(artworkPath(), artworkName)
+    if (!artworkFiles.has(artworkName)) {
+      artworkFiles.add(artworkName)
+      try { await fs.writeFile(artworkFile, cover.data, { flag: 'wx' }) }
+      catch (error) {
+        if (error?.code !== 'EEXIST') { artworkFiles.delete(artworkName); throw error }
+      }
+    }
     artwork = mediaUrl(artworkFile)
   }
+  const duration = metadata.format.duration || (metadata.format.bitrate ? stats.size * 8 / metadata.format.bitrate : 0)
   const fallbackTitle = path.basename(filePath, path.extname(filePath))
   return {
     id: createHash('sha1').update(filePath).digest('hex'),
@@ -175,7 +183,7 @@ async function extractTrack(filePath, index, sidecars, stats) {
     track: common.track.no || index + 1,
     disc: common.disk.no || 1,
     genre: common.genre?.[0] || '',
-    duration: metadata.format.duration || 0,
+    duration,
     sampleRate: metadata.format.sampleRate || 0,
     bitDepth: metadata.format.bitsPerSample || 0,
     lossless: metadata.format.lossless || false,
@@ -193,6 +201,7 @@ async function scanLibrary(folder) {
   if (!stats.isDirectory()) throw new Error('Music library path is not a directory')
   const { files, sidecars } = await discoverFiles(folder)
   await fs.mkdir(artworkPath(), { recursive: true })
+  const artworkFiles = new Set(await fs.readdir(artworkPath()))
   const previous = await readCache()
   const byPath = new Map(previous.tracks.map((track) => [pathKey(track.path), track]))
   const bySignature = new Map()
@@ -203,13 +212,15 @@ async function scanLibrary(folder) {
   const tracks = new Array(files.length)
   let cursor = 0
   let completed = 0
+  let lastProgressAt = 0
   const worker = async () => {
     while (cursor < files.length) {
       const index = cursor++
       const filePath = files[index]
       try {
         const cached = byPath.get(pathKey(filePath))
-        const fileStats = await fs.stat(filePath)
+        const fileStatsPromise = fs.stat(filePath)
+        const fileStats = cached ? await fileStatsPromise : null
         const unchanged = cached && (!cached.modifiedAt || (cached.modifiedAt === fileStats.mtimeMs && cached.fileSize === fileStats.size))
         tracks[index] = unchanged ? {
           ...cached,
@@ -217,7 +228,7 @@ async function scanLibrary(folder) {
           lyricPath: await findLyrics(filePath, sidecars),
           fileSize: fileStats.size,
           modifiedAt: fileStats.mtimeMs,
-        } : await extractTrack(filePath, index, sidecars, fileStats)
+        } : await extractTrack(filePath, index, sidecars, fileStatsPromise, artworkFiles)
         if (!cached) {
           const migrated = bySignature.get(trackSignature(tracks[index]))
           if (migrated) tracks[index] = { ...tracks[index], id: migrated.id, addedAt: migrated.addedAt }
@@ -226,13 +237,15 @@ async function scanLibrary(folder) {
         console.warn(`Could not read metadata for ${filePath}:`, error)
       }
       completed += 1
-      if (completed % 10 === 0 || completed === files.length) {
+      const now = Date.now()
+      if (completed === files.length || now - lastProgressAt >= 100) {
+        lastProgressAt = now
         mainWindow?.webContents.send('library:progress', { current: completed, total: files.length })
       }
     }
   }
   const processors = os.availableParallelism?.() || 4
-  const metadataWorkers = Math.min(files.length, Math.max(8, Math.min(24, processors * 2)))
+  const metadataWorkers = Math.min(files.length, Math.max(16, Math.min(48, processors * 2)))
   await Promise.all(Array.from({ length: metadataWorkers }, worker))
   const liveIds = new Set(tracks.filter(Boolean).map((track) => track.id))
   const library = {
@@ -278,6 +291,11 @@ function watchLibrary(folder) {
     libraryWatcher = watch(folder, { recursive: true }, (_event, filename) => {
       if (filename && !audioExtensions.has(path.extname(filename).toLowerCase()) && path.extname(filename).toLowerCase() !== '.lrc') return
       refresh()
+    })
+    libraryWatcher.on('error', (error) => {
+      console.warn('Music library watcher stopped; periodic refresh remains active:', error)
+      libraryWatcher?.close()
+      libraryWatcher = null
     })
   } catch (error) { console.warn('Could not watch music library:', error) }
   watchPoll = setInterval(refresh, 5 * 60 * 1000)
