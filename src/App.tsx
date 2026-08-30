@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import type { ArtistImages, Library, LyricLine, Playlist, ScanProgress, Settings, Track } from './types'
 import './App.css'
+import logoUrl from './assets/logo.png'
 
 type View = 'home' | 'supermix' | 'recent' | 'artists' | 'albums' | 'songs' | 'genres' | 'decades' | 'favorites' | 'playlist' | 'settings'
 type RepeatMode = 'off' | 'all' | 'one'
@@ -19,10 +20,16 @@ interface Location { view: View; artist: string; album: string; playlist: string
 const defaultSettings: Settings = {
   onlineLyrics: true, lyricsContrast: 'high', visualizerStyle: 'spectrum', visualizerIntensity: 0.55,
   visualizerOpacity: 0.24, visualizerColor: '#f6f3ed', reduceMotion: false, volume: 0.82, shuffle: false, repeat: 'off',
-  libraryExpanded: true, dynamicBackground: true,
+  libraryExpanded: true, dynamicBackground: true, accentColor: '#6832c2',
 }
 const emptyLibrary: Library = { folder: '', tracks: [], history: [], favorites: [], liked: [], disliked: [], playlists: [], settings: defaultSettings }
 const artColors = ['#cd493f', '#18737f', '#a37736', '#485ca8', '#9c4368', '#557248']
+const accentPresets = [
+  { name: 'Polaris purple', color: '#6832c2' }, { name: 'Coral', color: '#f0504d' },
+  { name: 'Rose', color: '#e04787' }, { name: 'Teal', color: '#197f8c' },
+  { name: 'Ocean', color: '#2f73c9' }, { name: 'Fern', color: '#3d8b61' },
+  { name: 'Amber', color: '#c27b28' },
+] as const
 const rowBatchSize = 250
 
 function formatTime(seconds: number) {
@@ -681,9 +688,9 @@ function App() {
   const seekTo = (time: number) => { if (audioRef.current) audioRef.current.currentTime = time }
 
   return (
-    <div className={`app ${mobilePlayer ? 'mobile-player-open' : ''} ${mobilePlayer && lyricsOpen ? 'lyrics-view' : ''}`}>
+    <div className={`app ${mobilePlayer ? 'mobile-player-open' : ''} ${mobilePlayer && lyricsOpen ? 'lyrics-view' : ''}`} style={{ '--accent': library.settings.accentColor, '--accent-soft': `color-mix(in srgb, ${library.settings.accentColor} 16%, transparent)` } as React.CSSProperties}>
       <audio ref={audioRef} crossOrigin="anonymous" onTimeUpdate={(event) => { const now = performance.now(); if (now - lastElapsedUpdate.current >= 250) { lastElapsedUpdate.current = now; setElapsed(event.currentTarget.currentTime) } }} onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)} onCanPlay={() => setPlaybackError('')} onError={(event) => handlePlaybackError(event.currentTarget)} onEnded={onEnded} />
-      <header className="titlebar"><div className="wordmark"><span><Sparkles /></span> POLARIS</div>{(query || selectedAlbum || selectedArtist) && <IconButton className="nav-back" label="Go back" onClick={goBack}><ArrowLeft /></IconButton>}<div className="global-search"><Search /><input value={query} onChange={(event) => updateSearch(event.target.value)} placeholder="Search songs, artists, albums" />{query && <IconButton label="Clear search" onClick={() => setQuery('')}><X /></IconButton>}</div></header>
+      <header className="titlebar"><div className="wordmark"><img src={logoUrl} alt="" /> POLARIS</div>{(query || selectedAlbum || selectedArtist) && <IconButton className="nav-back" label="Go back" onClick={goBack}><ArrowLeft /></IconButton>}<div className="global-search"><Search /><input value={query} onChange={(event) => updateSearch(event.target.value)} placeholder="Search songs, artists, albums" />{query && <IconButton label="Clear search" onClick={() => setQuery('')}><X /></IconButton>}</div></header>
       <aside className="sidebar">
         <nav>
           <NavButton icon={<Home />} label="Home" active={view === 'home'} onClick={() => showView('home')} />
@@ -698,7 +705,7 @@ function App() {
         </nav>
         <div className="source-card"><LibraryIcon /><span><strong>{library.folder ? 'Music folder' : 'No source added'}</strong><small>{library.folder || 'Choose your NAS folder'}</small></span><IconButton label={library.folder ? 'Rescan library' : 'Add folder'} onClick={rescan}>{library.folder ? <RefreshCw /> : <Plus />}</IconButton></div>
       </aside>
-      <main className="content">{view === 'playlist' && selectedPlaylist && (renamingPlaylist ? <div className="playlist-rename-editor"><input aria-label="Playlist name" autoFocus value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') savePlaylistName(); if (event.key === 'Escape') setRenamingPlaylist(false) }} /><button className="secondary-button" onClick={savePlaylistName}>Save playlist name</button><IconButton label="Cancel rename" onClick={() => setRenamingPlaylist(false)}><X /></IconButton></div> : <button className="playlist-rename-button secondary-button" onClick={renameSelectedPlaylist}>Rename playlist</button>)}{content()}</main>
+      <main className="content">{view === 'playlist' && selectedPlaylist && (renamingPlaylist ? <div className="playlist-rename-editor"><input aria-label="Playlist name" autoFocus value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') savePlaylistName(); if (event.key === 'Escape') setRenamingPlaylist(false) }} /><button className="secondary-button" onClick={savePlaylistName}>Save playlist name</button><IconButton label="Cancel rename" onClick={() => setRenamingPlaylist(false)}><X /></IconButton></div> : <button className="playlist-rename-button secondary-button" onClick={renameSelectedPlaylist}>Rename playlist</button>)}{content()}{view === 'settings' && <section className="accent-settings"><div className="settings-group"><h2>Theme</h2><p>Choose the accent used for active controls and highlights.</p><fieldset className="accent-picker"><legend>Accent color</legend><div>{accentPresets.map((preset) => <button key={preset.color} className={library.settings.accentColor === preset.color ? 'active' : ''} style={{ '--swatch': preset.color } as React.CSSProperties} aria-label={preset.name} title={preset.name} onClick={() => updateSettings({ accentColor: preset.color })}><span /></button>)}</div></fieldset></div></section>}</main>
       {playbackError && <div className="playback-error"><AudioLines /><span><strong>Could not play this song</strong><small>{playbackError}</small></span><IconButton label="Dismiss" onClick={() => setPlaybackError('')}><X /></IconButton></div>}
       {scan && <div className="scan-toast"><RefreshCw className="spin" /><span><strong>Reading your library</strong><small>{scan.total ? `${scan.current.toLocaleString()} of ${scan.total.toLocaleString()} tracks` : 'Finding music files…'}</small></span>{scan.total > 0 && <progress value={scan.current} max={scan.total} />}</div>}
       {(lyricsOpen || queueOpen) && !(mobilePlayer && lyricsOpen) && <aside className="right-panel"><div className="panel-header"><div className="segmented"><button className={lyricsOpen ? 'active' : ''} disabled={lyricsUnavailable} onClick={() => { setLyricsOpen(true); setQueueOpen(false) }}>Lyrics</button><button className={queueOpen ? 'active' : ''} onClick={() => { setQueueOpen(true); setLyricsOpen(false) }}>Queue</button></div><IconButton label="Close panel" onClick={() => { setLyricsOpen(false); setQueueOpen(false) }}><X /></IconButton></div>{lyricsOpen ? <LyricsDisplay contrast={library.settings.lyricsContrast} lines={displayLyrics} loading={lyricsLoading} activeLine={activeLyric} onSeek={seekTo} /> : <div className="queue"><p>Up next</p>{queue.slice(queueIndex + 1).map((track, index) => <div className="queue-item" key={`${track.id}-${index}`}><button className="queue-play" onClick={() => { setQueueIndex(queueIndex + index + 1); setPlaying(true) }}><Artwork track={track} size="small" /></button><span><button onClick={() => { setQueueIndex(queueIndex + index + 1); setPlaying(true) }}><strong>{track.title}</strong></button><button onClick={() => openArtist(track)}><small>{track.artist}</small></button><button onClick={() => openAlbum(track)}><small>{track.album}</small></button></span><small>{formatTime(track.duration)}</small></div>)}</div>}</aside>}

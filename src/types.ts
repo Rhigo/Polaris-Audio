@@ -31,6 +31,7 @@ export interface Playlist {
 }
 
 export type VisualizerStyle = 'spectrum' | 'waveform' | 'ambient' | 'off'
+export type AccentColor = '#6832c2' | '#f0504d' | '#e04787' | '#197f8c' | '#2f73c9' | '#3d8b61' | '#c27b28'
 
 export interface Settings {
   onlineLyrics: boolean
@@ -45,6 +46,7 @@ export interface Settings {
   repeat: 'off' | 'all' | 'one'
   libraryExpanded: boolean
   dynamicBackground: boolean
+  accentColor: AccentColor
 }
 
 export interface Library {

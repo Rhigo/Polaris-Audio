@@ -4,6 +4,10 @@
 
 Polaris plays your own collection directly from disk. It combines a responsive library, immersive playback, synchronized lyrics, rich artist pages, playlists, and a preference-aware Supermix without uploading your audio.
 
+[Download Polaris for Windows](https://github.com/Rhigo/Polaris-Audio/releases/latest/download/Polaris-1.0.0-Portable.exe)
+
+No installer is required. Download the portable `.exe`, open it, and choose your music folder.
+
 ![Polaris artist view](docs/screenshots/artist.png)
 
 ## Highlights

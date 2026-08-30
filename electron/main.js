@@ -81,15 +81,18 @@ const mediaUrl = (filePath) => `polaris://media/${Buffer.from(filePath).toString
 const defaultSettings = {
   onlineLyrics: true, lyricsContrast: 'high', visualizerStyle: 'spectrum', visualizerIntensity: 0.55,
   visualizerOpacity: 0.24, visualizerColor: '#f6f3ed', reduceMotion: false, volume: 0.82, shuffle: false, repeat: 'off',
-  libraryExpanded: true, dynamicBackground: true,
+  libraryExpanded: true, dynamicBackground: true, accentColor: '#6832c2',
 }
+const accentColors = new Set(['#6832c2', '#f0504d', '#e04787', '#197f8c', '#2f73c9', '#3d8b61', '#c27b28'])
 
 function normalizeLibrary(value = {}) {
+  const settings = { ...defaultSettings, ...(value.settings || {}) }
+  if (!accentColors.has(settings.accentColor)) settings.accentColor = defaultSettings.accentColor
   return {
     folder: typeof value.folder === 'string' ? value.folder : '', tracks: Array.isArray(value.tracks) ? value.tracks : [],
     history: Array.isArray(value.history) ? value.history : [], favorites: Array.isArray(value.favorites) ? value.favorites : [],
     liked: Array.isArray(value.liked) ? value.liked : [], disliked: Array.isArray(value.disliked) ? value.disliked : [],
-    playlists: Array.isArray(value.playlists) ? value.playlists : [], settings: { ...defaultSettings, ...(value.settings || {}) },
+    playlists: Array.isArray(value.playlists) ? value.playlists : [], settings,
   }
 }
 
@@ -224,7 +227,11 @@ async function extractTrack(filePath, index, sidecars, statsPromise, artworkFile
     }
     artwork = mediaUrl(artworkFile)
   }
-  const duration = metadata.format.duration || (metadata.format.bitrate ? stats.size * 8 / metadata.format.bitrate : 0)
+  let duration = metadata.format.duration || (metadata.format.bitrate ? stats.size * 8 / metadata.format.bitrate : 0)
+  if (!duration) {
+    const durationMetadata = await parseFile(filePath, { duration: true, skipCovers: true })
+    duration = durationMetadata.format.duration || 0
+  }
   const fallbackTitle = path.basename(filePath, path.extname(filePath))
   return {
     id: createHash('sha1').update(filePath).digest('hex'),
