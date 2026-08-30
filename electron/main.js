@@ -27,6 +27,18 @@ const artistImageRequests = new Map()
 let musicBrainzQueue = Promise.resolve()
 let lastMusicBrainzRequest = 0
 
+process.on('uncaughtException', (error) => {
+  const watcherFailure = error?.syscall === 'watch' || error?.stack?.includes('node:internal/fs/watchers')
+  if (watcherFailure) {
+    console.warn('Music library watcher failed; periodic refresh remains active:', error)
+    libraryWatcher?.close()
+    libraryWatcher = null
+    return
+  }
+  console.error('Uncaught main-process error:', error)
+  app.exit(1)
+})
+
 const musicBrainzFetch = (url) => {
   const request = musicBrainzQueue.then(async () => {
     const wait = Math.max(0, 1100 - (Date.now() - lastMusicBrainzRequest))
