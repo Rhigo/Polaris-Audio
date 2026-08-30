@@ -299,7 +299,7 @@ input[type='range'] { height: 3px; margin: 0; accent-color: var(--accent); curso
 
 @media (max-width: 760px) {
   .app { grid-template: 52px minmax(0, 1fr) 68px / 1fr; }
-  .titlebar { min-width: 0; grid-column: 1; padding: 0 112px 0 16px; gap: 12px; }
+  .titlebar { min-width: 0; grid-column: 1; padding: 0 150px 0 16px; gap: 12px; }
   .wordmark { width: auto; }
   .wordmark { font-size: 0; }
   .global-search { width: auto; min-width: 0; flex: 1; }
@@ -359,11 +359,13 @@ input[type='range'] { height: 3px; margin: 0; accent-color: var(--accent); curso
   .expanded .player-center { order: 4; width: 100%; margin-top: 20px; display: flex; flex-direction: column-reverse; gap: 20px; }
   .expanded .player-center .timeline { display: grid; }
   .expanded .player-center .transport { display: flex; justify-content: space-between; }
-  .expanded .player-center .transport > * { display: grid; }
+  .now-playing.expanded .player-center .transport > * { display: grid; }
   .expanded .transport-play { width: 58px; height: 58px; }
   .expanded .transport-play svg { width: 24px; height: 24px; }
-  .expanded .player-tools { order: 5; width: 100%; margin-top: 16px; display: flex; justify-content: center; }
-  .expanded .player-tools .volume, .expanded .player-tools .icon-button:last-child { display: none; }
+  .expanded .player-tools { order: 5; width: 100%; margin-top: 16px; display: flex; flex-wrap: wrap; justify-content: center; }
+  .now-playing.expanded .player-tools .volume { order: 2; flex: 1 0 100%; display: flex; justify-content: center; margin-top: 12px; }
+  .now-playing.expanded .player-tools .volume input { width: min(240px, calc(100vw - 100px)); }
+  .expanded .player-tools .icon-button:last-child { display: none; }
   .expanded .immersive-lyrics { position: absolute; z-index: 3; inset: 48px 20px 174px; display: flex; height: auto; padding: min(18vh, 130px) 12px; animation: lyrics-in .32s ease both; }
   .expanded .immersive-lyrics .lyrics-back { position: sticky; z-index: 2; top: calc(min(18vh, 130px) * -1); }
   .lyrics-view .expanded .mobile-art { opacity: 0; transform: scale(.94); pointer-events: none; }
@@ -372,7 +374,7 @@ input[type='range'] { height: 3px; margin: 0; accent-color: var(--accent); curso
 
 @media (max-width: 420px) {
   .content { padding-inline: 13px; }
-  .titlebar { padding-left: 10px; }
+  .titlebar { padding-left: 10px; padding-right: 146px; }
   .global-search { padding-inline: 10px; }
   .empty-library h1 { font-size: 34px; }
 }

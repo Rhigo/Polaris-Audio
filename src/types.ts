@@ -62,7 +62,7 @@ export interface LyricLine { time: number | null; text: string }
 export interface ScanProgress { current: number; total: number }
 export interface ArtistLink { label: string; url: string }
 export interface PopularRecording { title: string; listens: number; listeners: number }
-export interface ArtistImages { profile: string; background: string; biography?: string; genres?: string[]; links?: ArtistLink[]; topRecordings?: PopularRecording[]; cachedAt?: number }
+export interface ArtistImages { profile: string; background: string; biography?: string; genres?: string[]; links?: ArtistLink[]; topRecordings?: PopularRecording[]; requestedArtist?: string; resolvedArtist?: string; cachedAt?: number }
 
 declare global {
   interface Window {

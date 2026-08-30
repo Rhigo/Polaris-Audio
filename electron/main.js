@@ -63,6 +63,10 @@ const externalUrl = (value) => {
   return /^https?:\/\//i.test(value) ? value : `https://${value}`
 }
 
+const normalizedArtistName = (value = '') => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim()
+const exactArtistMatch = (candidate, requested) => normalizedArtistName(candidate) === normalizedArtistName(requested)
+const wikipediaArtistMatch = (candidate, requested) => exactArtistMatch(candidate?.replace(/\s*\((?:band|musician|rapper|singer|group|artist|dj)\)\s*$/i, ''), requested)
+
 if (process.env.POLARIS_USER_DATA) app.setPath('userData', process.env.POLARIS_USER_DATA)
 
 protocol.registerSchemesAsPrivileged([
@@ -522,17 +526,19 @@ app.whenReady().then(async () => {
         artistImageCache = Object.fromEntries(Object.entries(artistImageCache).filter(([, value]) => typeof value === 'object' && value.cachedAt >= oldest).sort(([, left], [, right]) => right.cachedAt - left.cachedAt).slice(0, 5000))
       }
       const cached = artistImageCache[artist]
-      if (cached && typeof cached !== 'string' && Date.now() - cached.cachedAt < 30 * 24 * 60 * 60 * 1000) return cached
+      const cacheLifetime = cached?.resolvedArtist ? 30 * 24 * 60 * 60 * 1000 : 6 * 60 * 60 * 1000
+      if (cached && typeof cached !== 'string' && cached.requestedArtist === normalizedArtistName(artist) && Date.now() - cached.cachedAt < cacheLifetime) return cached
 
       const audioDbUrl = `${process.env.AUDIODB_API_URL || 'https://www.theaudiodb.com/api/v1/json/123/search.php'}?s=${encodeURIComponent(artist)}`
       const audioDbResponse = await net.fetch(audioDbUrl, { signal: AbortSignal.timeout(6000) })
       const audioDbData = audioDbResponse.ok ? await audioDbResponse.json() : {}
-      const match = audioDbData.artists?.[0]
+      const match = audioDbData.artists?.find((candidate) => exactArtistMatch(candidate.strArtist, artist))
       let profile = match?.strArtistThumb || ''
       let background = match?.strArtistFanart || match?.strArtistFanart2 || match?.strArtistWideThumb || profile
-      const biography = match?.strBiographyEN || ''
+      let biography = match?.strBiographyEN || ''
       const genres = [...new Set([match?.strGenre, match?.strStyle, match?.strMood].filter(Boolean))]
       let mbid = match?.strMusicBrainzID || match?.idArtistMusicBrainz || ''
+      let resolvedArtist = match?.strArtist || ''
       const audioDbUrls = [match?.strWebsite, match?.strFacebook, match?.strTwitter].map(externalUrl).filter(Boolean)
       let links = audioDbUrls.map((url) => ({ label: socialLabel(url), url }))
 
@@ -540,7 +546,9 @@ app.whenReady().then(async () => {
         const searchUrl = `${process.env.MUSICBRAINZ_API_URL || 'https://musicbrainz.org/ws/2'}/artist/?query=${encodeURIComponent(`artist:${artist}`)}&limit=3&fmt=json`
         const searchResponse = await musicBrainzFetch(searchUrl)
         const searchData = searchResponse.ok ? await searchResponse.json() : {}
-        mbid = searchData.artists?.[0]?.id || ''
+        const musicBrainzMatch = searchData.artists?.find((candidate) => exactArtistMatch(candidate.name, artist) || candidate.aliases?.some((alias) => exactArtistMatch(alias.name, artist)))
+        mbid = musicBrainzMatch?.id || ''
+        resolvedArtist ||= musicBrainzMatch?.name || ''
       }
       if (mbid) {
         const relationResponse = await musicBrainzFetch(`${process.env.MUSICBRAINZ_API_URL || 'https://musicbrainz.org/ws/2'}/artist/${encodeURIComponent(mbid)}?inc=url-rels&fmt=json`)
@@ -558,19 +566,30 @@ app.whenReady().then(async () => {
         topRecordings = recordings.map((recording) => ({ title: recording.recording_name || recording.title || '', listens: recording.listen_count || recording.total_listen_count || 0, listeners: recording.listener_count || recording.total_user_count || 0 })).filter((recording) => recording.title).slice(0, 100)
       }
 
-      if (!profile && !background) {
-        const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(artist + ' musician')}&gsrlimit=1&prop=pageimages&pithumbsize=900&format=json&origin=*`
-        const wikiResponse = await net.fetch(wikiUrl, { signal: AbortSignal.timeout(6000) })
-        const wikiData = wikiResponse.ok ? await wikiResponse.json() : {}
-        profile = Object.values(wikiData.query?.pages || {})[0]?.thumbnail?.source || ''
-        background = profile
+      if (!biography || (!profile && !background)) {
+        const wikipediaApi = process.env.WIKIPEDIA_API_URL || 'https://en.wikipedia.org/w/api.php'
+        const wikiSearchUrl = `${wikipediaApi}?action=query&list=search&srsearch=${encodeURIComponent(`intitle:"${artist}" musician OR band`)}&srlimit=5&format=json&origin=*`
+        const wikiSearchResponse = await net.fetch(wikiSearchUrl, { signal: AbortSignal.timeout(6000) })
+        const wikiSearchData = wikiSearchResponse.ok ? await wikiSearchResponse.json() : {}
+        const wikiMatches = (wikiSearchData.query?.search || []).filter((candidate) => wikipediaArtistMatch(candidate.title, artist)).sort((left, right) => Number(left.title === artist) - Number(right.title === artist))
+        for (const wikiMatch of wikiMatches) {
+          const summaryBase = process.env.WIKIPEDIA_SUMMARY_URL || 'https://en.wikipedia.org/api/rest_v1/page/summary'
+          const summaryResponse = await net.fetch(`${summaryBase}/${encodeURIComponent(wikiMatch.title)}`, { signal: AbortSignal.timeout(6000) })
+          const summary = summaryResponse.ok ? await summaryResponse.json() : {}
+          if (summary.type === 'disambiguation' || !/\b(?:band|musician|singer|rapper|recording artist|musical group|music producer|dj|composer|songwriter|duo)\b/i.test(summary.description || '')) continue
+          biography ||= summary.extract || ''
+          profile ||= summary.thumbnail?.source || summary.originalimage?.source || ''
+          background ||= summary.originalimage?.source || summary.thumbnail?.source || profile
+          resolvedArtist ||= wikiMatch.title
+          break
+        }
       }
 
-      const images = { profile, background, biography, genres, links, topRecordings, cachedAt: Date.now() }
+      const images = { profile, background, biography, genres, links, topRecordings, requestedArtist: normalizedArtistName(artist), resolvedArtist, cachedAt: Date.now() }
       artistImageCache[artist] = images
       await fs.writeFile(artistCachePath(), JSON.stringify(artistImageCache), 'utf8')
       return images
-    } catch { return { profile: '', background: '', cachedAt: Date.now() } }
+    } catch { return { profile: '', background: '', requestedArtist: normalizedArtistName(artist), resolvedArtist: '', cachedAt: Date.now() } }
     })()
     artistImageRequests.set(artist, request)
     request.finally(() => artistImageRequests.delete(artist))

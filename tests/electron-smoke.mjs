@@ -45,9 +45,11 @@ const lyricsAddress = lyricsServer.address()
 const artistServer = createServer((request, response) => {
   const url = new URL(request.url, 'http://localhost')
   response.setHeader('Content-Type', 'application/json')
-  if (url.pathname === '/audiodb') return response.end(JSON.stringify({ artists: [{ strArtist: 'Coldplay', strBiographyEN: 'A test biography.', strGenre: 'Alternative', strMusicBrainzID: 'test-mbid', strWebsite: 'coldplay.com' }] }))
+  if (url.pathname === '/audiodb') return response.end(JSON.stringify({ artists: [{ strArtist: 'Cold Play Tribute', strBiographyEN: 'Wrong artist.', strMusicBrainzID: 'wrong-mbid' }, { strArtist: 'Coldplay', strBiographyEN: 'A test biography.', strGenre: 'Alternative', strMusicBrainzID: 'test-mbid', strWebsite: 'coldplay.com' }] }))
   if (url.pathname.includes('/artist/test-mbid')) return response.end(JSON.stringify({ relations: [{ url: { resource: 'https://instagram.com/coldplay' } }] }))
   if (url.pathname.includes('/top-recordings-for-artist/')) return response.end(JSON.stringify({ recordings: [{ recording_name: 'Polaris Test Tone', listen_count: 500, listener_count: 300 }, { recording_name: 'Cloud Only Song', listen_count: 900, listener_count: 700 }] }))
+  if (url.pathname === '/wiki') return response.end(JSON.stringify({ query: { search: [{ title: 'Wrong Hard Life' }, { title: 'Hard Life (band)' }] } }))
+  if (url.pathname.startsWith('/summary/')) return response.end(JSON.stringify({ description: 'English alternative rock band', extract: 'Verified encyclopedia biography.', thumbnail: { source: 'https://example.com/hard-life.jpg' } }))
   response.statusCode = 404
   response.end('{}')
 })
@@ -78,7 +80,7 @@ await fs.writeFile(path.join(profile, 'library.json'), JSON.stringify({
 
 const app = await electron.launch({
   args: ['.'],
-  env: { ...process.env, POLARIS_USER_DATA: profile, VITE_DEV_SERVER_URL: 'http://127.0.0.1:4174', LRCLIB_API_URL: `http://127.0.0.1:${lyricsAddress.port}/api/get`, AUDIODB_API_URL: `http://127.0.0.1:${artistAddress.port}/audiodb`, MUSICBRAINZ_API_URL: `http://127.0.0.1:${artistAddress.port}/musicbrainz`, LISTENBRAINZ_API_URL: `http://127.0.0.1:${artistAddress.port}/listenbrainz` },
+  env: { ...process.env, POLARIS_USER_DATA: profile, VITE_DEV_SERVER_URL: 'http://127.0.0.1:4174', LRCLIB_API_URL: `http://127.0.0.1:${lyricsAddress.port}/api/get`, AUDIODB_API_URL: `http://127.0.0.1:${artistAddress.port}/audiodb`, MUSICBRAINZ_API_URL: `http://127.0.0.1:${artistAddress.port}/musicbrainz`, LISTENBRAINZ_API_URL: `http://127.0.0.1:${artistAddress.port}/listenbrainz`, WIKIPEDIA_API_URL: `http://127.0.0.1:${artistAddress.port}/wiki`, WIKIPEDIA_SUMMARY_URL: `http://127.0.0.1:${artistAddress.port}/summary` },
 })
 
 try {
@@ -175,6 +177,8 @@ try {
   await page.getByRole('button', { name: 'Instagram' }).waitFor({ timeout: 10000 })
   await page.getByText('A test biography.').waitFor()
   if (await page.getByText('Cloud Only Song').count()) throw new Error('Artist popularity rendered a song that is not in the local library')
+  const fallbackArtist = await page.evaluate(() => window.polaris.getArtistImage('Hard Life'))
+  if (fallbackArtist.biography !== 'Verified encyclopedia biography.' || fallbackArtist.resolvedArtist !== 'Hard Life (band)') throw new Error(`Artist identity fallback failed: ${JSON.stringify(fallbackArtist)}`)
   await page.getByRole('button', { name: 'Go back' }).click()
   await page.getByRole('heading', { name: 'Songs' }).waitFor()
 
@@ -264,7 +268,15 @@ try {
   await page.getByRole('heading', { name: 'Playback Tests' }).waitFor()
 
   await page.setViewportSize({ width: 390, height: 844 })
+  const mobileSearchBounds = await page.locator('.global-search').boundingBox()
+  if (!mobileSearchBounds || mobileSearchBounds.x + mobileSearchBounds.width > 244) throw new Error(`Mobile search overlaps Windows caption controls: ${JSON.stringify(mobileSearchBounds)}`)
   await page.locator('.now-art-button').click()
+  const mobileControls = await page.evaluate(() => ({
+    previous: getComputedStyle(document.querySelector('[aria-label="Previous"]')).display,
+    next: getComputedStyle(document.querySelector('[aria-label="Next"]')).display,
+    volume: getComputedStyle(document.querySelector('.now-playing.expanded .volume')).display,
+  }))
+  if (mobileControls.previous === 'none' || mobileControls.next === 'none' || mobileControls.volume === 'none') throw new Error(`Mobile playback controls are hidden: ${JSON.stringify(mobileControls)}`)
   await page.getByRole('button', { name: 'Lyrics', exact: true }).click()
   await page.locator('.immersive-lyrics').waitFor()
   await page.waitForFunction(() => Number(getComputedStyle(document.querySelector('.mobile-art')).opacity) < 0.1)
