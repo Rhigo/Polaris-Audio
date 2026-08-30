@@ -19,6 +19,7 @@ let lyricsFetchQueue = Promise.resolve()
 let lyricsBlockedUntil = 0
 let libraryRoot = ''
 let activeScan = null
+let queuedScanFolder = ''
 let libraryWatcher
 let watchTimer
 let watchPoll
@@ -247,8 +248,15 @@ async function scanLibrary(folder) {
 }
 
 function requestScan(folder) {
-  if (activeScan) return activeScan
-  activeScan = scanLibrary(folder).finally(() => { activeScan = null })
+  if (activeScan) { queuedScanFolder = folder; return activeScan }
+  activeScan = scanLibrary(folder).finally(() => {
+    activeScan = null
+    if (queuedScanFolder) {
+      const nextFolder = queuedScanFolder
+      queuedScanFolder = ''
+      requestScan(nextFolder).then((library) => mainWindow?.webContents.send('library:updated', library), (error) => console.warn('Queued library refresh failed:', error))
+    }
+  })
   return activeScan
 }
 
@@ -332,9 +340,10 @@ async function mediaResponse(request) {
   let stats
   try {
     const token = new URL(request.url).pathname.slice(1)
-    filePath = Buffer.from(token, 'base64url').toString()
+    filePath = await fs.realpath(Buffer.from(token, 'base64url').toString())
     const allowedRoots = [libraryRoot, artworkPath()].filter(Boolean)
-    if (!allowedRoots.some((root) => isWithin(root, filePath))) throw new Error('Path is outside the media library')
+    const canonicalRoots = await Promise.all(allowedRoots.map((root) => fs.realpath(root).catch(() => '')))
+    if (!canonicalRoots.some((root) => root && isWithin(root, filePath))) throw new Error('Path is outside the media library')
     stats = await fs.stat(filePath)
     if (!stats.isFile()) throw new Error('Not a file')
   } catch {

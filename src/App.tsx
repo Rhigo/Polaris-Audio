@@ -99,7 +99,7 @@ function buildSupermix(library: Library, variation: number) {
     const noise = Math.abs(Math.sin([...track.id].reduce((sum, char) => sum + char.charCodeAt(0), variation + 1))) * 8
     return affinity + recency + noise
   }
-  const candidates = [...library.tracks].sort((left, right) => score(right) - score(left))
+  const candidates = library.tracks.filter((track) => !library.disliked.includes(track.id)).sort((left, right) => score(right) - score(left))
   const result: Track[] = []
   for (const track of candidates) {
     if (result.length >= 100) break

@@ -196,6 +196,7 @@ try {
 
   await page.getByRole('button', { name: 'Supermix', exact: true }).click()
   await page.getByRole('heading', { name: 'Supermix' }).waitFor()
+  if (await page.getByRole('button', { name: 'Play Polaris Test Tone' }).count()) throw new Error('Disliked track was included in Supermix')
   await page.getByRole('button', { name: 'Regenerate' }).click()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('heading', { name: 'Settings' }).waitFor()
