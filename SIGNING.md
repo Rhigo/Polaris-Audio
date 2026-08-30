@@ -14,6 +14,7 @@ Polaris is prepared for free signing through [SignPath Foundation](https://signp
    - Variable: `SIGNPATH_PROJECT_SLUG`
    - Variable: `SIGNPATH_SIGNING_POLICY_SLUG`
 6. Run the **Build portable release** workflow from the GitHub Actions tab and approve its signing request in SignPath.
+7. Enable **Publish the signed executable as a GitHub Release** only when the version is ready for public release. That path refuses to publish unless every SignPath setting is present and the signed executable was returned.
 
 When the SignPath variables are absent, the workflow still produces a traceable unsigned artifact. Once they are configured, it also submits that exact artifact for signing and publishes the returned signed artifact separately.
 

@@ -2,13 +2,21 @@ name: Build portable release
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the signed executable as a GitHub Release
+        required: true
+        default: false
+        type: boolean
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -30,6 +38,13 @@ jobs:
       - name: Build portable executable
         run: npx electron-builder --win portable --config.directories.output=dist
 
+      - name: Read release version
+        id: release
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          "version=$version" >> $env:GITHUB_OUTPUT
+
       - name: Upload unsigned artifact
         id: upload-unsigned-artifact
         uses: actions/upload-artifact@v4
@@ -39,10 +54,10 @@ jobs:
           if-no-files-found: error
 
       - name: Submit SignPath signing request
-        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' && vars.SIGNPATH_SIGNING_POLICY_SLUG != '' }}
+        if: ${{ env.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' && vars.SIGNPATH_SIGNING_POLICY_SLUG != '' }}
         uses: signpath/github-action-submit-signing-request@v2
         with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          api-token: ${{ env.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
           signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
@@ -51,9 +66,20 @@ jobs:
           output-artifact-directory: signed
 
       - name: Upload signed artifact
-        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' && vars.SIGNPATH_SIGNING_POLICY_SLUG != '' }}
+        if: ${{ env.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' && vars.SIGNPATH_SIGNING_POLICY_SLUG != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: Polaris-portable-signed
           path: signed/**
           if-no-files-found: error
+
+      - name: Publish signed GitHub release
+        if: ${{ inputs.publish_release && env.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' && vars.SIGNPATH_SIGNING_POLICY_SLUG != '' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = '${{ steps.release.outputs.version }}'
+          $executable = Get-ChildItem signed -Recurse -Filter "Polaris-$version-Portable.exe" | Select-Object -First 1
+          if (-not $executable) { throw 'The signed portable executable was not returned by SignPath.' }
+          gh release create "v$version" $executable.FullName --repo "${{ github.repository }}" --title "Polaris $version" --generate-notes --latest

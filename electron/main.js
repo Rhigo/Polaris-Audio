@@ -17,10 +17,9 @@ let artistImageCache
 let lyricsCache
 let lyricsFetchQueue = Promise.resolve()
 let lyricsBlockedUntil = 0
-let libraryRoot = ''
-let activeScan = null
-let queuedScanFolder = ''
-let libraryWatcher
+let libraryRoots = []
+let scanQueue = Promise.resolve()
+let libraryWatchers = []
 let watchTimer
 let watchPoll
 let cacheWriteQueue = Promise.resolve()
@@ -32,8 +31,8 @@ process.on('uncaughtException', (error) => {
   const watcherFailure = error?.syscall === 'watch' || error?.stack?.includes('node:internal/fs/watchers')
   if (watcherFailure) {
     console.warn('Music library watcher failed; periodic refresh remains active:', error)
-    libraryWatcher?.close()
-    libraryWatcher = null
+    for (const watcher of libraryWatchers) watcher.close()
+    libraryWatchers = []
     return
   }
   console.error('Uncaught main-process error:', error)
@@ -125,8 +124,10 @@ const accentColors = new Set(['#6832c2', '#f0504d', '#e04787', '#197f8c', '#2f73
 function normalizeLibrary(value = {}) {
   const settings = { ...defaultSettings, ...(value.settings || {}) }
   if (!accentColors.has(settings.accentColor)) settings.accentColor = defaultSettings.accentColor
+  const legacyFolder = typeof value.folder === 'string' ? value.folder : ''
+  const folders = [...new Set((Array.isArray(value.folders) ? value.folders : [legacyFolder]).filter((folder) => typeof folder === 'string' && folder.trim()).map((folder) => path.resolve(folder)))]
   return {
-    folder: typeof value.folder === 'string' ? value.folder : '', tracks: Array.isArray(value.tracks) ? value.tracks : [],
+    folders, folder: folders[0] || '', tracks: Array.isArray(value.tracks) ? value.tracks : [],
     history: Array.isArray(value.history) ? value.history : [], favorites: Array.isArray(value.favorites) ? value.favorites : [],
     liked: Array.isArray(value.liked) ? value.liked : [], disliked: Array.isArray(value.disliked) ? value.disliked : [],
     playlists: Array.isArray(value.playlists) ? value.playlists : [], settings,
@@ -136,7 +137,7 @@ function normalizeLibrary(value = {}) {
 async function readCache() {
   try {
     const library = normalizeLibrary(JSON.parse(await fs.readFile(cachePath(), 'utf8')))
-    libraryRoot = library.folder
+    libraryRoots = library.folders
     return library
   } catch {
     return normalizeLibrary()
@@ -306,11 +307,21 @@ async function extractTrack(filePath, index, sidecars, statsPromise, artworkFile
   }
 }
 
-async function scanLibrary(folder) {
-  const stats = await fs.stat(folder)
-  if (!stats.isDirectory()) throw new Error('Music library path is not a directory')
+async function scanLibrary(sourceFolders, { foreground = false } = {}) {
+  const folders = [...new Set(sourceFolders.map((folder) => path.resolve(folder)))]
   const previous = await readCache()
-  const { files, sidecars, unavailableDirectories } = await discoverFiles(folder)
+  const discoveries = await Promise.all(folders.map(async (folder) => {
+    try {
+      const stats = await fs.stat(folder)
+      if (!stats.isDirectory()) throw new Error('Music library path is not a directory')
+      return discoverFiles(folder)
+    } catch {
+      return { files: [], sidecars: new Map(), unavailableDirectories: [folder] }
+    }
+  }))
+  const files = [...new Map(discoveries.flatMap((result) => result.files).map((filePath) => [pathKey(filePath), filePath])).values()].sort(comparePaths)
+  const sidecars = new Map(discoveries.flatMap((result) => [...result.sidecars]))
+  const unavailableDirectories = discoveries.flatMap((result) => result.unavailableDirectories)
   await fs.mkdir(artworkPath(), { recursive: true })
   const artworkFiles = new Set(await fs.readdir(artworkPath()))
   const byPath = new Map(previous.tracks.map((track) => [pathKey(track.path), track]))
@@ -349,7 +360,7 @@ async function scanLibrary(folder) {
       }
       completed += 1
       const now = Date.now()
-      if (completed === files.length || now - lastProgressAt >= 100) {
+      if (foreground && (completed === files.length || now - lastProgressAt >= 100)) {
         lastProgressAt = now
         mainWindow?.webContents.send('library:progress', { current: completed, total: files.length })
       }
@@ -363,55 +374,52 @@ async function scanLibrary(folder) {
   const liveTracks = [...tracks.filter(Boolean), ...preservedTracks]
   const liveIds = new Set(liveTracks.map((track) => track.id))
   const library = await updateCache((latest) => ({
-    folder, tracks: liveTracks,
+    folders, folder: folders[0] || '', tracks: liveTracks,
     history: latest.history.filter((id) => liveIds.has(id)), favorites: latest.favorites.filter((id) => liveIds.has(id)),
     liked: latest.liked.filter((id) => liveIds.has(id)), disliked: latest.disliked.filter((id) => liveIds.has(id)),
     playlists: latest.playlists.map((playlist) => ({ ...playlist, trackIds: playlist.trackIds.filter((id) => liveIds.has(id)) })),
     settings: latest.settings,
   }))
-  libraryRoot = folder
+  libraryRoots = folders
   return library
 }
 
-function requestScan(folder) {
-  if (activeScan) { queuedScanFolder = folder; return activeScan }
-  activeScan = scanLibrary(folder).finally(() => {
-    activeScan = null
-    if (queuedScanFolder) {
-      const nextFolder = queuedScanFolder
-      queuedScanFolder = ''
-      requestScan(nextFolder).then((library) => mainWindow?.webContents.send('library:updated', library), (error) => console.warn('Queued library refresh failed:', error))
-    }
-  })
-  return activeScan
+function requestScan(folders, options) {
+  const operation = scanQueue.then(() => scanLibrary(folders, options))
+  scanQueue = operation.then(() => undefined, () => undefined)
+  return operation
 }
 
-function watchLibrary(folder) {
-  libraryWatcher?.close()
+function watchLibraries(folders) {
+  for (const watcher of libraryWatchers) watcher.close()
+  libraryWatchers = []
   clearTimeout(watchTimer)
   clearInterval(watchPoll)
-  if (!folder) return
+  if (!folders.length) return
   const refresh = () => {
     clearTimeout(watchTimer)
     watchTimer = setTimeout(async () => {
       try {
-        const library = await requestScan(folder)
+        const library = await requestScan(folders, { foreground: false })
         mainWindow?.webContents.send('library:updated', library)
       } catch (error) { console.warn('Automatic library refresh failed:', error) }
-    }, 2500)
+    }, 8000)
   }
-  try {
-    libraryWatcher = watch(folder, { recursive: true }, (_event, filename) => {
-      if (filename && !audioExtensions.has(path.extname(filename).toLowerCase()) && path.extname(filename).toLowerCase() !== '.lrc') return
-      refresh()
-    })
-    libraryWatcher.on('error', (error) => {
-      console.warn('Music library watcher stopped; periodic refresh remains active:', error)
-      libraryWatcher?.close()
-      libraryWatcher = null
-    })
-  } catch (error) { console.warn('Could not watch music library:', error) }
-  watchPoll = setInterval(refresh, 5 * 60 * 1000)
+  for (const folder of folders) {
+    try {
+      const watcher = watch(folder, { recursive: true }, (_event, filename) => {
+        if (filename && !audioExtensions.has(path.extname(filename).toLowerCase()) && path.extname(filename).toLowerCase() !== '.lrc') return
+        refresh()
+      })
+      watcher.on('error', (error) => {
+        console.warn(`Music library watcher stopped for ${folder}; periodic refresh remains active:`, error)
+        watcher.close()
+        libraryWatchers = libraryWatchers.filter((candidate) => candidate !== watcher)
+      })
+      libraryWatchers.push(watcher)
+    } catch (error) { console.warn(`Could not watch music library ${folder}:`, error) }
+  }
+  watchPoll = setInterval(refresh, 30 * 60 * 1000)
   watchPoll.unref?.()
 }
 
@@ -472,7 +480,7 @@ async function mediaResponse(request) {
   try {
     const token = new URL(request.url).pathname.slice(1)
     filePath = await retryTransient(() => fs.realpath(Buffer.from(token, 'base64url').toString()))
-    const allowedRoots = [libraryRoot, artworkPath()].filter(Boolean)
+    const allowedRoots = [...libraryRoots, artworkPath()].filter(Boolean)
     const canonicalRoots = await Promise.all(allowedRoots.map((root) => retryTransient(() => fs.realpath(root)).catch(() => '')))
     if (!canonicalRoots.some((root) => root && isWithin(root, filePath))) throw new Error('Path is outside the media library')
     stats = await retryTransient(() => fs.stat(filePath))
@@ -532,20 +540,29 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  await readCache()
-  watchLibrary(libraryRoot)
+  const cachedLibrary = await readCache()
+  watchLibraries(cachedLibrary.folders)
   protocol.handle('polaris', mediaResponse)
   ipcMain.handle('library:get', readCache)
-  ipcMain.handle('library:choose', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'], title: 'Choose your music folder' })
+  ipcMain.handle('library:add-source', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'], title: 'Add a music source' })
     if (result.canceled) return null
-    const library = await requestScan(result.filePaths[0])
-    watchLibrary(library.folder)
+    const current = await readCache()
+    const folders = [...new Set([...current.folders, path.resolve(result.filePaths[0])])]
+    const library = await requestScan(folders, { foreground: true })
+    watchLibraries(library.folders)
     return library
   })
-  ipcMain.handle('library:rescan', async (_, folder) => {
+  ipcMain.handle('library:remove-source', async (_, folder) => {
     const library = await readCache()
-    return folder && path.resolve(folder) === path.resolve(library.folder) ? requestScan(folder) : library
+    const folders = library.folders.filter((candidate) => pathKey(candidate) !== pathKey(folder))
+    const next = await requestScan(folders, { foreground: true })
+    watchLibraries(next.folders)
+    return next
+  })
+  ipcMain.handle('library:rescan', async () => {
+    const library = await readCache()
+    return requestScan(library.folders, { foreground: true })
   })
   ipcMain.handle('library:save-state', async (_, state) => {
     const allowed = {}

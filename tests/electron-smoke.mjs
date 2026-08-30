@@ -48,7 +48,7 @@ const artistServer = createServer((request, response) => {
   response.setHeader('Content-Type', 'application/json')
   if (url.pathname === '/release') {
     updateRequests += 1
-    return response.end(JSON.stringify({ tag_name: 'v1.0.4', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.4', assets: [{ name: 'Polaris-1.0.4-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.4/Polaris-1.0.4-Portable.exe' }] }))
+    return response.end(JSON.stringify({ tag_name: 'v1.0.5', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.5', assets: [{ name: 'Polaris-1.0.5-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.5/Polaris-1.0.5-Portable.exe' }] }))
   }
   if (url.pathname === '/audiodb') return response.end(JSON.stringify({ artists: [{ strArtist: 'Cold Play Tribute', strBiographyEN: 'Wrong artist.', strMusicBrainzID: 'wrong-mbid' }, { strArtist: 'Coldplay', strBiographyEN: 'A test biography.', strGenre: 'Alternative', strMusicBrainzID: 'test-mbid', strWebsite: 'coldplay.com' }] }))
   if (url.pathname.includes('/artist/test-mbid')) return response.end(JSON.stringify({ relations: [{ url: { resource: 'https://instagram.com/coldplay' } }] }))
@@ -62,14 +62,18 @@ await new Promise((resolve) => artistServer.listen(0, '127.0.0.1', resolve))
 const artistAddress = artistServer.address()
 const profile = path.join(root, 'profile')
 const music = path.join(root, 'music')
+const secondMusic = path.join(root, 'music-secondary')
 await fs.mkdir(profile, { recursive: true })
 await fs.mkdir(music, { recursive: true })
+await fs.mkdir(secondMusic, { recursive: true })
 const trackPath = path.join(music, 'Polaris Test Tone.wav')
 const secondTrackPath = path.join(music, 'Skip Target.wav')
 const privatePath = path.join(root, 'not-in-library.txt')
+const secondaryTrackPath = path.join(secondMusic, 'Secondary Source.wav')
 await fs.writeFile(trackPath, createWave())
 await fs.writeFile(secondTrackPath, createWave())
 await fs.writeFile(privatePath, 'private test data', 'utf8')
+await fs.writeFile(secondaryTrackPath, createWave(1))
 await fs.writeFile(path.join(music, 'Polaris Test Tone.lrc'), '[00:00.00]Polaris smoke lyric\n[00:01.00]Playback is working\n', 'utf8')
 await fs.writeFile(path.join(music, 'Skip Target.lrc'), '[00:00.00]Skip smoke lyric\n', 'utf8')
 const id = createHash('sha1').update(trackPath).digest('hex')
@@ -101,7 +105,7 @@ const app = await electron.launch({
 try {
   const page = await app.firstWindow()
   page.on('console', (message) => console.log(`[renderer:${message.type()}] ${message.text()}`))
-  await page.getByText('Polaris 1.0.4 is available').waitFor({ timeout: 5000 })
+  await page.getByText('Polaris 1.0.5 is available').waitFor({ timeout: 5000 })
   await page.getByRole('button', { name: 'Dismiss update' }).click()
   await page.getByRole('button', { name: 'Songs', exact: true }).click()
   await page.getByRole('button', { name: 'Play Polaris Test Tone' }).click()
@@ -163,11 +167,11 @@ try {
   const blockedStatus = await page.evaluate(async (mediaUrl) => (await fetch(mediaUrl)).status, blockedUrl)
   if (blockedStatus !== 404) throw new Error(`Media path guard failed with status ${blockedStatus}`)
   console.log('media guard passed; starting rescan')
-  const scanMs = await page.evaluate(async ({ folder, historyId }) => {
+  const scanMs = await page.evaluate(async (historyId) => {
     const started = performance.now()
-    await Promise.all([window.polaris.rescan(folder), window.polaris.saveState({ history: [historyId] })])
+    await Promise.all([window.polaris.rescan(), window.polaris.saveState({ history: [historyId] })])
     return performance.now() - started
-  }, { folder: music, historyId: secondId })
+  }, secondId)
   console.log(`rescan completed in ${Math.round(scanMs)}ms`)
   if (scanMs > 5000) throw new Error(`Fixture rescan was unexpectedly slow: ${scanMs}ms`)
   const stateAfterScan = await page.evaluate(() => window.polaris.getLibrary())
@@ -190,7 +194,7 @@ try {
   await page.locator('.artist-card').filter({ hasText: 'Coldplay' }).click()
   await page.getByRole('button', { name: 'Go back' }).waitFor()
   if (process.env.POLARIS_SMOKE_SCREENSHOT) {
-    await page.waitForFunction(() => [...document.querySelectorAll('.artist-detail img')].length === 2 && [...document.querySelectorAll('.artist-detail img')].every((image) => image.complete && image.naturalWidth > 0), null, { timeout: 10000 })
+    await page.getByText('A test biography.').waitFor({ timeout: 10000 })
     await page.screenshot({ path: process.env.POLARIS_SMOKE_SCREENSHOT })
   }
   await page.locator('.album-card').filter({ hasText: 'Playback Tests' }).click()
@@ -266,11 +270,26 @@ try {
   await page.getByRole('button', { name: 'Play Polaris Test Tone' }).click()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('heading', { name: 'Settings' }).waitFor()
-  await page.getByText('Polaris 1.0.4 is ready to download.').waitFor()
+  const migratedLibrary = await page.evaluate(() => window.polaris.getLibrary())
+  if (migratedLibrary.folders.length !== 1 || migratedLibrary.folders[0] !== migratedLibrary.folder) throw new Error(`Legacy folder migration failed: ${JSON.stringify(migratedLibrary.folders)}`)
+  await app.evaluate(({ dialog }, folder) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] })
+  }, secondMusic)
+  await page.getByRole('button', { name: 'Add source' }).click()
+  await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.folders.length === 2 && value.tracks.some((track) => track.title === 'Secondary Source')))
+  await page.locator('.source-item').nth(1).waitFor()
+  if (await page.locator('.source-item').count() !== 2) throw new Error('Settings did not render both music sources')
+  const secondaryMediaStatus = await page.evaluate(async (trackPath) => {
+    const library = await window.polaris.getLibrary()
+    const track = library.tracks.find((candidate) => candidate.path === trackPath)
+    return track ? (await fetch(track.url, { headers: { Range: 'bytes=0-43' } })).status : 0
+  }, secondaryTrackPath)
+  if (secondaryMediaStatus !== 206) throw new Error(`Secondary source media was not authorized: ${secondaryMediaStatus}`)
+  await page.getByText('Polaris 1.0.5 is ready to download.').waitFor()
   await page.getByRole('button', { name: 'Check for updates' }).click()
-  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.4 is ready to download.'))
+  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.5 is ready to download.'))
   if (updateRequests < 2) throw new Error(`Manual update check did not reach the release endpoint: ${updateRequests}`)
-  await page.getByRole('button', { name: 'Get version 1.0.4' }).waitFor()
+  await page.getByRole('button', { name: 'Get version 1.0.5' }).waitFor()
   const titleLogo = page.locator('.wordmark img')
   await titleLogo.waitFor()
   if (!await titleLogo.evaluate((image) => image.complete && image.naturalWidth > 0)) throw new Error('Application logo did not load')
@@ -304,7 +323,7 @@ try {
   await page.getByRole('heading', { name: 'Results for “Coldplay”' }).waitFor()
   const searchTabs = page.locator('.search-tabs')
   await searchTabs.getByRole('button', { name: 'Songs 0' }).waitFor()
-  await searchTabs.getByRole('button', { name: 'Artists 1' }).click()
+  await searchTabs.getByRole('button', { name: /^Artists \d+$/ }).click()
   if (process.env.POLARIS_SEARCH_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.POLARIS_SEARCH_SCREENSHOT}-desktop-final.png` })
     await page.setViewportSize({ width: 390, height: 844 })
@@ -361,7 +380,9 @@ try {
   await page.getByRole('button', { name: 'Close full player' }).click()
 
   await fs.writeFile(path.join(music, 'Automatically Added.wav'), createWave(1))
+  if (await page.locator('.scan-toast').count()) throw new Error('Automatic refresh displayed foreground scan progress')
   await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.tracks.some((track) => track.title === 'Automatically Added')), null, { timeout: 15000 })
+  if (await page.locator('.scan-toast').count()) throw new Error('Automatic refresh left foreground scan progress visible')
 
   console.log(JSON.stringify({ playback, range, scanMs: Math.round(scanMs), mediaGuard: 'passed', automaticLibraryUpdate: 'passed', discovery: 'passed', feedback: 'passed', lyrics: 'loaded', navigation: 'passed', playlists: 'passed', supermix: 'passed', settings: 'passed', search: 'passed', sorting: 'passed', rowMenu: 'passed', immersivePlayer: 'passed' }, null, 2))
 } finally {

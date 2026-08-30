@@ -4,7 +4,7 @@
 
 Polaris plays your own collection directly from disk. It combines a responsive library, immersive playback, synchronized lyrics, rich artist pages, playlists, and a preference-aware Supermix without uploading your audio.
 
-[Download Polaris for Windows](https://github.com/Rhigo/Polaris-Audio/releases/latest/download/Polaris-1.0.3-Portable.exe)
+[Download Polaris for Windows](https://github.com/Rhigo/Polaris-Audio/releases/latest/download/Polaris-1.0.4-Portable.exe)
 
 No installer is required. Download the portable `.exe`, open it, and choose your music folder.
 
@@ -13,7 +13,8 @@ No installer is required. Download the portable `.exe`, open it, and choose your
 ## Highlights
 
 - **Built for large collections** - tested with 20,000 tracks, bounded rendering, cached metadata, and concurrent scanning.
-- **Incremental NAS updates** - unchanged files reuse indexed tags, while file and `.lrc` changes appear automatically.
+- **Multiple music sources** - combine local folders, mapped drives, and NAS shares in one library.
+- **Quiet incremental updates** - unchanged files reuse indexed tags while file and `.lrc` changes refresh silently in the background.
 - **Local-first playback** - FLAC, MP3, AAC/ALAC, OGG, Opus, WAV, WMA, and APE support with byte-range streaming.
 - **Library discovery** - browse artists, albums, songs, genres, decades, recent plays, and loved songs.
 - **Supermix** - a regenerating mix shaped by listening history, favorites, thumbs-up, thumbs-down, artists, and genres.
@@ -56,9 +57,9 @@ Online results and misses are cached. MusicBrainz requests are serialized and ra
 
 ## Getting Started
 
-1. Download or build `Polaris-1.0.3-Portable.exe`.
-2. Open Polaris and select **Add music folder**.
-3. Choose a local folder, mapped network drive, or UNC share.
+1. Download or build `Polaris-1.0.4-Portable.exe`.
+2. Open Polaris and select **Add music source**.
+3. Choose a local folder, mapped network drive, or UNC share. Add more sources from Settings at any time.
 4. Leave Polaris open for the initial metadata scan. Later refreshes process only changed files.
 
 Polaris checks the repository's latest GitHub Release when it starts and on demand from Settings. When an update is available, it opens the verified portable executable download; it does not modify the currently running file.
@@ -95,7 +96,7 @@ Build the portable Windows application:
 npm run dist
 ```
 
-The configured builder writes `Polaris-1.0.3-Portable.exe` to the local release output directory.
+The configured builder writes `Polaris-1.0.4-Portable.exe` to the local release output directory.
 
 ### Windows code signing
 
@@ -104,6 +105,10 @@ Release builds carry Rhigo publisher metadata and automatically use an Authentic
 A trusted OV or EV code-signing certificate issued to Rhigo is required to establish SmartScreen reputation. Publisher metadata or a self-signed certificate alone cannot prevent Windows warnings.
 
 Qualifying open-source releases can instead use the free SignPath Foundation workflow documented in [SIGNING.md](SIGNING.md).
+
+## Release History
+
+See [CHANGELOG.md](CHANGELOG.md) for the cumulative release history.
 
 ## Stack
 

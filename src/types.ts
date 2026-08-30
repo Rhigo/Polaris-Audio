@@ -50,6 +50,7 @@ export interface Settings {
 }
 
 export interface Library {
+  folders: string[]
   folder: string
   tracks: Track[]
   history: string[]
@@ -71,8 +72,9 @@ declare global {
   interface Window {
     polaris?: {
       getLibrary: () => Promise<Library>
-      chooseFolder: () => Promise<Library | null>
-      rescan: (folder: string) => Promise<Library>
+      addSource: () => Promise<Library | null>
+      removeSource: (folder: string) => Promise<Library>
+      rescan: () => Promise<Library>
       saveState: (state: Partial<Pick<Library, 'history' | 'favorites' | 'liked' | 'disliked' | 'playlists' | 'settings'>>) => Promise<void>
       getLyrics: (lyricPath: string, embedded?: string, trackPath?: string, track?: Pick<Track, 'title' | 'artist' | 'album' | 'duration'>) => Promise<LyricLine[]>
       getArtistImage: (artist: string) => Promise<ArtistImages>

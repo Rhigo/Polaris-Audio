@@ -109,3 +109,12 @@
 - [x] Optimize artist/album lookup, lyric timing, elapsed updates, and expanded artwork rendering.
 - [x] Validate Songs and search with a 20,000-track fixture.
 - [x] Capture real desktop and mobile screenshots and refresh the README.
+
+## Multi-Source And Background Refresh Update
+
+- [x] Support multiple local, mapped-drive, and NAS music sources in one library.
+- [x] Migrate existing single-folder indexes without losing tracks or user state.
+- [x] Keep automatic watcher and fallback refreshes quiet in the background.
+- [x] Reduce periodic NAS polling from five to thirty minutes.
+- [x] Improve spacing between artist banners and biographies.
+- [x] Open-source Polaris under MIT and add reproducible signing infrastructure.
