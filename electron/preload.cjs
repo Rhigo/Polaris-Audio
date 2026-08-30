@@ -12,4 +12,9 @@ contextBridge.exposeInMainWorld('polaris', {
     ipcRenderer.on('library:progress', handler)
     return () => ipcRenderer.removeListener('library:progress', handler)
   },
+  onLibraryUpdated: (callback) => {
+    const handler = (_event, library) => callback(library)
+    ipcRenderer.on('library:updated', handler)
+    return () => ipcRenderer.removeListener('library:updated', handler)
+  },
 })

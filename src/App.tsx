@@ -243,6 +243,8 @@ function App() {
     return window.polaris?.onScanProgress(setScan)
   }, [])
 
+  useEffect(() => window.polaris?.onLibraryUpdated((value) => { setLibrary(value); setScan(null) }), [])
+
   useEffect(() => {
     if (!openRowMenu) return
     const closeMenu = () => setOpenRowMenu('')

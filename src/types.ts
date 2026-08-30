@@ -18,6 +18,8 @@ export interface Track {
   lyricPath: string
   embeddedLyrics?: string
   addedAt: number
+  fileSize?: number
+  modifiedAt?: number
 }
 
 export interface Playlist {
@@ -66,6 +68,7 @@ declare global {
       getLyrics: (lyricPath: string, embedded?: string, trackPath?: string, track?: Pick<Track, 'title' | 'artist' | 'album' | 'duration'>) => Promise<LyricLine[]>
       getArtistImage: (artist: string) => Promise<ArtistImages>
       onScanProgress: (callback: (progress: ScanProgress) => void) => () => void
+      onLibraryUpdated: (callback: (library: Library) => void) => () => void
     }
   }
 }

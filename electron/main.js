@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
 import { createHash } from 'node:crypto'
-import { createReadStream, promises as fs } from 'node:fs'
+import { createReadStream, promises as fs, watch } from 'node:fs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import os from 'node:os'
@@ -19,6 +19,9 @@ let lyricsFetchQueue = Promise.resolve()
 let lyricsBlockedUntil = 0
 let libraryRoot = ''
 let activeScan = null
+let libraryWatcher
+let watchTimer
+let watchPoll
 const artistImageRequests = new Map()
 
 if (process.env.POLARIS_USER_DATA) app.setPath('userData', process.env.POLARIS_USER_DATA)
@@ -84,6 +87,8 @@ async function discoverFiles(root) {
 }
 
 const comparePaths = (left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' })
+const pathKey = (filePath) => process.platform === 'win32' ? path.resolve(filePath).toLocaleLowerCase() : path.resolve(filePath)
+const trackSignature = (track) => `${track.artist}\0${track.album}\0${track.title}\0${Math.round(track.duration || 0)}`.toLocaleLowerCase()
 
 function isWithin(parent, child) {
   const relative = path.relative(path.resolve(parent), path.resolve(child))
@@ -117,16 +122,15 @@ function embeddedLyrics(common) {
   }).filter(Boolean).join('\n')
 }
 
-async function extractTrack(filePath, index, sidecars) {
+async function extractTrack(filePath, index, sidecars, stats) {
   const metadata = await parseFile(filePath, { duration: true })
   const common = metadata.common
   const cover = selectCover(common.picture)
   let artwork = ''
   if (cover) {
-    await fs.mkdir(artworkPath(), { recursive: true })
     const extension = cover.format.includes('png') ? 'png' : 'jpg'
-    const artworkFile = path.join(artworkPath(), `${createHash('sha1').update(filePath).digest('hex')}.${extension}`)
-    await fs.writeFile(artworkFile, cover.data)
+    const artworkFile = path.join(artworkPath(), `${createHash('sha1').update(cover.data).digest('hex')}.${extension}`)
+    try { await fs.writeFile(artworkFile, cover.data, { flag: 'wx' }) } catch (error) { if (error?.code !== 'EEXIST') throw error }
     artwork = mediaUrl(artworkFile)
   }
   const fallbackTitle = path.basename(filePath, path.extname(filePath))
@@ -150,6 +154,8 @@ async function extractTrack(filePath, index, sidecars) {
     lyricPath: await findLyrics(filePath, sidecars),
     embeddedLyrics: embeddedLyrics(common),
     addedAt: Date.now(),
+    fileSize: stats.size,
+    modifiedAt: stats.mtimeMs,
   }
 }
 
@@ -157,8 +163,14 @@ async function scanLibrary(folder) {
   const stats = await fs.stat(folder)
   if (!stats.isDirectory()) throw new Error('Music library path is not a directory')
   const { files, sidecars } = await discoverFiles(folder)
+  await fs.mkdir(artworkPath(), { recursive: true })
   const previous = await readCache()
-  const byPath = new Map(previous.tracks.map((track) => [track.path, track]))
+  const byPath = new Map(previous.tracks.map((track) => [pathKey(track.path), track]))
+  const bySignature = new Map()
+  for (const track of previous.tracks) {
+    const signature = trackSignature(track)
+    bySignature.set(signature, bySignature.has(signature) ? null : track)
+  }
   const tracks = new Array(files.length)
   let cursor = 0
   let completed = 0
@@ -167,12 +179,20 @@ async function scanLibrary(folder) {
       const index = cursor++
       const filePath = files[index]
       try {
-        const cached = byPath.get(filePath)
-        tracks[index] = cached ? {
+        const cached = byPath.get(pathKey(filePath))
+        const fileStats = await fs.stat(filePath)
+        const unchanged = cached && (!cached.modifiedAt || (cached.modifiedAt === fileStats.mtimeMs && cached.fileSize === fileStats.size))
+        tracks[index] = unchanged ? {
           ...cached,
           url: mediaUrl(filePath),
           lyricPath: await findLyrics(filePath, sidecars),
-        } : await extractTrack(filePath, index, sidecars)
+          fileSize: fileStats.size,
+          modifiedAt: fileStats.mtimeMs,
+        } : await extractTrack(filePath, index, sidecars, fileStats)
+        if (!cached) {
+          const migrated = bySignature.get(trackSignature(tracks[index]))
+          if (migrated) tracks[index] = { ...tracks[index], id: migrated.id, addedAt: migrated.addedAt }
+        }
       } catch (error) {
         console.warn(`Could not read metadata for ${filePath}:`, error)
       }
@@ -182,7 +202,8 @@ async function scanLibrary(folder) {
       }
     }
   }
-  const metadataWorkers = Math.min(files.length, Math.max(4, Math.min(8, os.availableParallelism?.() || 4)))
+  const processors = os.availableParallelism?.() || 4
+  const metadataWorkers = Math.min(files.length, Math.max(8, Math.min(24, processors * 2)))
   await Promise.all(Array.from({ length: metadataWorkers }, worker))
   const liveIds = new Set(tracks.filter(Boolean).map((track) => track.id))
   const library = {
@@ -200,6 +221,30 @@ function requestScan(folder) {
   if (activeScan) return activeScan
   activeScan = scanLibrary(folder).finally(() => { activeScan = null })
   return activeScan
+}
+
+function watchLibrary(folder) {
+  libraryWatcher?.close()
+  clearTimeout(watchTimer)
+  clearInterval(watchPoll)
+  if (!folder) return
+  const refresh = () => {
+    clearTimeout(watchTimer)
+    watchTimer = setTimeout(async () => {
+      try {
+        const library = await requestScan(folder)
+        mainWindow?.webContents.send('library:updated', library)
+      } catch (error) { console.warn('Automatic library refresh failed:', error) }
+    }, 2500)
+  }
+  try {
+    libraryWatcher = watch(folder, { recursive: true }, (_event, filename) => {
+      if (filename && !audioExtensions.has(path.extname(filename).toLowerCase()) && path.extname(filename).toLowerCase() !== '.lrc') return
+      refresh()
+    })
+  } catch (error) { console.warn('Could not watch music library:', error) }
+  watchPoll = setInterval(refresh, 5 * 60 * 1000)
+  watchPoll.unref?.()
 }
 
 function parseLyrics(content) {
@@ -319,11 +364,15 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   await readCache()
+  watchLibrary(libraryRoot)
   protocol.handle('polaris', mediaResponse)
   ipcMain.handle('library:get', readCache)
   ipcMain.handle('library:choose', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'], title: 'Choose your music folder' })
-    return result.canceled ? null : requestScan(result.filePaths[0])
+    if (result.canceled) return null
+    const library = await requestScan(result.filePaths[0])
+    watchLibrary(library.folder)
+    return library
   })
   ipcMain.handle('library:rescan', async (_, folder) => {
     const library = await readCache()
