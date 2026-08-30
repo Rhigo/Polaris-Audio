@@ -1,0 +1,60 @@
+{
+  "name": "polaris-music-player",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A beautiful, private desktop music player for local and NAS libraries.",
+  "main": "electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev:web": "vite",
+    "start": "electron .",
+    "build": "tsc -b && vite build",
+    "test:smoke": "node tests/electron-smoke.mjs",
+    "test:performance": "node tests/performance-smoke.mjs",
+    "dist": "npm run build && electron-builder --win portable",
+    "lint": "oxlint src electron vite.config.ts",
+    "preview": "vite preview"
+  },
+  "build": {
+    "appId": "com.polaris.music",
+    "productName": "Polaris",
+    "directories": {
+      "output": "C:/Users/rhigo/AppData/Local/Temp/polaris-release"
+    },
+    "files": [
+      "build/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "Polaris-${version}-Portable.${ext}"
+    }
+  },
+  "dependencies": {
+    "@fontsource/dm-sans": "^5.3.0",
+    "@fontsource/manrope": "^5.3.0",
+    "lucide-react": "^1.37.0",
+    "music-metadata": "^11.15.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "concurrently": "^10.0.5",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "oxlint": "^1.79.0",
+    "playwright-core": "^1.62.1",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.2",
+    "wait-on": "^9.1.0"
+  }
+}

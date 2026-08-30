@@ -1,0 +1,32 @@
+@import '@fontsource/dm-sans/400.css';
+@import '@fontsource/dm-sans/500.css';
+@import '@fontsource/dm-sans/700.css';
+@import '@fontsource/manrope/600.css';
+@import '@fontsource/manrope/700.css';
+
+:root {
+  font-family: 'DM Sans', sans-serif;
+  color: #f4f2ef;
+  background: #0b0b0c;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --bg: #0b0b0c;
+  --surface: #121214;
+  --surface-2: #19191c;
+  --line: rgba(255, 255, 255, 0.09);
+  --muted: #99989d;
+  --text: #f4f2ef;
+  --accent: #f0504d;
+  --accent-soft: rgba(240, 80, 77, 0.16);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; min-width: 320px; height: 100%; margin: 0; overflow: hidden; }
+button, input { font: inherit; }
+button { color: inherit; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+::selection { background: var(--accent); color: white; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #3b3a3e; border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
