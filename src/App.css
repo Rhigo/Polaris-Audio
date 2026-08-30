@@ -275,7 +275,7 @@ input[type='range'] { height: 3px; margin: 0; accent-color: var(--accent); curso
 @media (min-width: 761px) {
   .mobile-player-open .sidebar, .mobile-player-open .content { visibility: hidden; }
   .now-playing.expanded { position: fixed; z-index: 30; inset: 58px 0 0; display: grid; grid-template: minmax(0, 1fr) auto auto auto / minmax(320px, 540px) minmax(320px, 520px); justify-content: center; align-items: center; column-gap: clamp(50px, 8vw, 130px); padding: 56px clamp(48px, 7vw, 120px) 40px; overflow: hidden; border: 0; background: #121113; }
-  .now-playing.expanded::before { content: ''; position: absolute; z-index: -1; inset: -50px; background: linear-gradient(rgba(12,11,13,.54), rgba(12,11,13,.9)), var(--player-art); background-position: center; background-size: cover; filter: blur(30px) saturate(.72); transform: scale(1.08); }
+  .now-playing.expanded::before { content: ''; position: absolute; z-index: -1; inset: 0; background: linear-gradient(rgba(12,11,13,.62), rgba(12,11,13,.94)), var(--player-art); background-position: center; background-size: cover; filter: saturate(.72); }
   .expanded .mobile-collapse { position: absolute; z-index: 4; top: 18px; left: 24px; display: grid; width: 38px; height: 38px; place-items: center; color: var(--text); border-radius: 50%; background: rgba(0,0,0,.28); }
   .expanded .mobile-art { grid-area: 1 / 1; min-height: 0; display: grid; place-items: center; }
   .expanded .mobile-art .artwork { width: min(34vw, 48vh, 500px); box-shadow: 0 30px 80px rgba(0,0,0,.5); }
@@ -344,7 +344,7 @@ input[type='range'] { height: 3px; margin: 0; accent-color: var(--accent); curso
   .mobile-player-open .sidebar, .mobile-player-open .content { visibility: hidden; }
   .mobile-player-open .titlebar { position: relative; z-index: 31; }
   .now-playing.expanded { position: fixed; z-index: 30; inset: 52px 0 0; width: 100%; height: auto; padding: 20px 24px 34px; display: flex; flex-direction: column; gap: 0; overflow: hidden; background: #111113; }
-  .now-playing.expanded::before { content: ''; position: absolute; z-index: -1; inset: -40px; background: linear-gradient(rgba(17,17,19,.4), rgba(17,17,19,.88)), var(--player-art); background-position: center; background-size: cover; filter: blur(26px) saturate(.75); transform: scale(1.12); }
+  .now-playing.expanded::before { content: ''; position: absolute; z-index: -1; inset: 0; background: linear-gradient(rgba(17,17,19,.55), rgba(17,17,19,.92)), var(--player-art); background-position: center; background-size: cover; filter: saturate(.75); }
   .expanded .mobile-collapse { display: grid; width: 38px; height: 38px; place-items: center; align-self: center; }
   .expanded .now-track { order: 3; position: relative; width: 100%; display: flex; justify-content: center; margin-top: 27px; padding-inline: 44px; text-align: center; }
   .expanded .now-track > span { width: 100%; justify-items: center; }

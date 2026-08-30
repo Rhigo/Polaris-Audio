@@ -33,6 +33,18 @@ function formatTime(seconds: number) {
 
 const normalizedTitle = (title: string) => title.toLocaleLowerCase().replace(/\([^)]*\)|\[[^\]]*\]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
 
+function findActiveLyric(lines: LyricLine[], elapsed: number) {
+  let low = 0
+  let high = lines.length - 1
+  let active = -1
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    const time = lines[middle].time
+    if (time !== null && time <= elapsed) { active = middle; low = middle + 1 } else high = middle - 1
+  }
+  return active
+}
+
 function uniqueBy<T>(items: T[], key: (item: T) => string) {
   return [...new Map(items.map((item) => [key(item), item])).values()]
 }
@@ -235,6 +247,7 @@ function App() {
   const [rowWindow, setRowWindow] = useState({ key: '', count: rowBatchSize })
   const audioRef = useRef<HTMLAudioElement>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
+  const lastElapsedUpdate = useRef(0)
   const current = queue[queueIndex]
 
   useEffect(() => {
@@ -618,14 +631,14 @@ function App() {
   }
 
   const displayLyrics = lyricsTrackId === current?.id ? lyrics : []
-  const activeLyric = displayLyrics.reduce((active, line, index) => line.time !== null && line.time <= elapsed ? index : active, -1)
+  const activeLyric = findActiveLyric(displayLyrics, elapsed)
   const lyricsLoading = Boolean(current && lyricsTrackId !== current.id)
   const lyricsUnavailable = !current || (!lyricsLoading && !displayLyrics.length)
   const seekTo = (time: number) => { if (audioRef.current) audioRef.current.currentTime = time }
 
   return (
     <div className={`app ${mobilePlayer ? 'mobile-player-open' : ''} ${mobilePlayer && lyricsOpen ? 'lyrics-view' : ''}`}>
-      <audio ref={audioRef} crossOrigin="anonymous" onTimeUpdate={(event) => setElapsed(event.currentTarget.currentTime)} onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)} onCanPlay={() => setPlaybackError('')} onError={(event) => setPlaybackError(event.currentTarget.error?.message || 'This audio format could not be played.')} onEnded={onEnded} />
+      <audio ref={audioRef} crossOrigin="anonymous" onTimeUpdate={(event) => { const now = performance.now(); if (now - lastElapsedUpdate.current >= 250) { lastElapsedUpdate.current = now; setElapsed(event.currentTarget.currentTime) } }} onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)} onCanPlay={() => setPlaybackError('')} onError={(event) => setPlaybackError(event.currentTarget.error?.message || 'This audio format could not be played.')} onEnded={onEnded} />
       <header className="titlebar"><div className="wordmark"><span><Sparkles /></span> POLARIS</div>{(query || selectedAlbum || selectedArtist) && <IconButton className="nav-back" label="Go back" onClick={goBack}><ArrowLeft /></IconButton>}<div className="global-search"><Search /><input value={query} onChange={(event) => updateSearch(event.target.value)} placeholder="Search songs, artists, albums" />{query && <IconButton label="Clear search" onClick={() => setQuery('')}><X /></IconButton>}</div></header>
       <aside className="sidebar">
         <nav>

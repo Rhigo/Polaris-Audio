@@ -7,7 +7,7 @@ const root = await fs.mkdtemp(path.join(os.tmpdir(), 'polaris-performance-'))
 const profile = path.join(root, 'profile')
 await fs.mkdir(profile, { recursive: true })
 
-const tracks = Array.from({ length: 10000 }, (_, index) => ({
+const tracks = Array.from({ length: 20000 }, (_, index) => ({
   id: `track-${index}`, path: `C:\\Music\\track-${index}.flac`, url: `polaris://media/dGVzdA`,
   title: index % 1000 === 0 ? `Needle Song ${index}` : `Library Song ${String(index).padStart(5, '0')}`,
   artist: `Artist ${index % 400}`, albumArtist: `Artist ${index % 400}`, album: `Album ${index % 800}`,
@@ -34,7 +34,7 @@ try {
 
   const searchStarted = performance.now()
   await page.getByPlaceholder('Search songs, artists, albums').fill('Needle')
-  await page.locator('.search-tabs').getByRole('button', { name: 'Songs 10' }).waitFor()
+  await page.locator('.search-tabs').getByRole('button', { name: 'Songs 20' }).waitFor()
   const searchMs = Math.round(performance.now() - searchStarted)
 
   console.log(JSON.stringify({ tracks: tracks.length, songsMs, searchMs, renderedRows }, null, 2))
