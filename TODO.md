@@ -96,7 +96,7 @@
 - [x] Run `npm run build`.
 - [x] Run `npm run test:smoke`.
 - [x] Run `npm run test:performance`.
-- [ ] Package and launch the updated portable Windows release.
+- [x] Package and launch the updated portable Windows release.
 
 ## Large Library And Discovery Update
 
