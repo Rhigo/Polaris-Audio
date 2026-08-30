@@ -88,7 +88,18 @@ try {
   await page.getByRole('button', { name: 'Play Polaris Test Tone' }).click()
   const range = await page.evaluate(async (mediaUrl) => {
     const response = await fetch(mediaUrl, { headers: { Range: 'bytes=0-43' } })
-    return { status: response.status, range: response.headers.get('content-range'), length: (await response.arrayBuffer()).byteLength }
+    const suffixResponse = await fetch(mediaUrl, { headers: { Range: 'bytes=-128' } })
+    const fullResponse = await fetch(mediaUrl)
+    return {
+      status: response.status,
+      range: response.headers.get('content-range'),
+      length: (await response.arrayBuffer()).byteLength,
+      suffixStatus: suffixResponse.status,
+      suffixRange: suffixResponse.headers.get('content-range'),
+      suffixLength: (await suffixResponse.arrayBuffer()).byteLength,
+      fullStatus: fullResponse.status,
+      fullLength: (await fullResponse.arrayBuffer()).byteLength,
+    }
   }, url)
   await page.waitForFunction(() => {
     const audio = document.querySelector('audio')
@@ -106,6 +117,9 @@ try {
   console.log(JSON.stringify({ range, audioState }, null, 2))
   if (range.status !== 206 || range.length !== 44 || !range.range?.startsWith('bytes 0-43/')) {
     throw new Error(`Invalid media range response: ${JSON.stringify(range)}`)
+  }
+  if (range.suffixStatus !== 206 || range.suffixLength !== 128 || !range.suffixRange?.endsWith('/264644') || range.fullStatus !== 200 || range.fullLength !== 264644) {
+    throw new Error(`Invalid resilient media response: ${JSON.stringify(range)}`)
   }
   if (audioState.paused || audioState.currentTime <= 0.25) throw new Error(`Playback did not advance: ${JSON.stringify(audioState)}`)
   const blockedUrl = `polaris://media/${Buffer.from(privatePath).toString('base64url')}`

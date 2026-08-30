@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
 import { createHash } from 'node:crypto'
-import { createReadStream, promises as fs, watch } from 'node:fs'
+import { promises as fs, watch } from 'node:fs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import os from 'node:os'
@@ -106,15 +106,17 @@ async function writeCache(data) {
 async function discoverFiles(root) {
   const found = []
   const sidecars = new Map()
+  const unavailableDirectories = []
   const pending = [root]
   const workers = Math.min(32, Math.max(8, os.availableParallelism?.() || 4))
   while (pending.length) {
     const directories = pending.splice(0, workers)
     const batches = await Promise.all(directories.map(async (directory) => {
-      try { return { directory, entries: await fs.readdir(directory, { withFileTypes: true }) } }
-      catch { return { directory, entries: [] } }
+      try { return { directory, entries: await retryTransient(() => fs.readdir(directory, { withFileTypes: true })) } }
+      catch { return { directory, entries: [], unavailable: true } }
     }))
-    for (const { directory, entries } of batches) {
+    for (const { directory, entries, unavailable } of batches) {
+      if (unavailable) unavailableDirectories.push(directory)
       for (const entry of entries) {
         const fullPath = path.join(directory, entry.name)
         if (entry.isDirectory()) pending.push(fullPath)
@@ -124,7 +126,7 @@ async function discoverFiles(root) {
     }
   }
   found.sort(comparePaths)
-  return { files: found, sidecars }
+  return { files: found, sidecars, unavailableDirectories }
 }
 
 const comparePaths = (left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' })
@@ -134,6 +136,43 @@ const trackSignature = (track) => `${track.artist}\0${track.album}\0${track.titl
 function isWithin(parent, child) {
   const relative = path.relative(path.resolve(parent), path.resolve(child))
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+const transientReadErrors = new Set(['UNKNOWN', 'EIO', 'EBUSY', 'EPERM', 'ECONNRESET', 'ENETRESET', 'ENETUNREACH', 'ETIMEDOUT'])
+
+async function retryTransient(operation, attempts = 5) {
+  for (let attempt = 0; ; attempt += 1) {
+    try { return await operation() }
+    catch (error) {
+      if (!transientReadErrors.has(error?.code) || attempt >= attempts - 1) throw error
+      await new Promise((resolve) => setTimeout(resolve, Math.min(3000, 500 * (2 ** attempt))))
+    }
+  }
+}
+
+async function* resilientFileChunks(filePath, start, end) {
+  let position = start
+  let retries = 0
+  while (position <= end) {
+    let handle
+    try {
+      handle = await fs.open(filePath, 'r')
+      while (position <= end) {
+        const buffer = Buffer.allocUnsafe(Math.min(256 * 1024, end - position + 1))
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, position)
+        if (!bytesRead) throw Object.assign(new Error('Unexpected end of media file'), { code: 'EIO' })
+        position += bytesRead
+        retries = 0
+        yield bytesRead === buffer.length ? buffer : buffer.subarray(0, bytesRead)
+      }
+    } catch (error) {
+      if (!transientReadErrors.has(error?.code) || retries >= 5) throw error
+      retries += 1
+      await new Promise((resolve) => setTimeout(resolve, Math.min(3000, 500 * (2 ** (retries - 1)))))
+    } finally {
+      await handle?.close().catch(() => {})
+    }
+  }
 }
 
 async function findLyrics(filePath, sidecars) {
@@ -211,10 +250,10 @@ async function extractTrack(filePath, index, sidecars, statsPromise, artworkFile
 async function scanLibrary(folder) {
   const stats = await fs.stat(folder)
   if (!stats.isDirectory()) throw new Error('Music library path is not a directory')
-  const { files, sidecars } = await discoverFiles(folder)
+  const previous = await readCache()
+  const { files, sidecars, unavailableDirectories } = await discoverFiles(folder)
   await fs.mkdir(artworkPath(), { recursive: true })
   const artworkFiles = new Set(await fs.readdir(artworkPath()))
-  const previous = await readCache()
   const byPath = new Map(previous.tracks.map((track) => [pathKey(track.path), track]))
   const bySignature = new Map()
   for (const track of previous.tracks) {
@@ -229,8 +268,8 @@ async function scanLibrary(folder) {
     while (cursor < files.length) {
       const index = cursor++
       const filePath = files[index]
+      const cached = byPath.get(pathKey(filePath))
       try {
-        const cached = byPath.get(pathKey(filePath))
         const fileStatsPromise = fs.stat(filePath)
         const fileStats = cached ? await fileStatsPromise : null
         const unchanged = cached && (!cached.modifiedAt || (cached.modifiedAt === fileStats.mtimeMs && cached.fileSize === fileStats.size))
@@ -247,6 +286,7 @@ async function scanLibrary(folder) {
         }
       } catch (error) {
         console.warn(`Could not read metadata for ${filePath}:`, error)
+        if (cached) tracks[index] = { ...cached, url: mediaUrl(filePath) }
       }
       completed += 1
       const now = Date.now()
@@ -259,9 +299,12 @@ async function scanLibrary(folder) {
   const processors = os.availableParallelism?.() || 4
   const metadataWorkers = Math.min(files.length, Math.max(16, Math.min(48, processors * 2)))
   await Promise.all(Array.from({ length: metadataWorkers }, worker))
-  const liveIds = new Set(tracks.filter(Boolean).map((track) => track.id))
+  const scannedPaths = new Set(files.map(pathKey))
+  const preservedTracks = previous.tracks.filter((track) => !scannedPaths.has(pathKey(track.path)) && unavailableDirectories.some((directory) => isWithin(directory, track.path)))
+  const liveTracks = [...tracks.filter(Boolean), ...preservedTracks]
+  const liveIds = new Set(liveTracks.map((track) => track.id))
   const library = {
-    folder, tracks: tracks.filter(Boolean),
+    folder, tracks: liveTracks,
     history: previous.history.filter((id) => liveIds.has(id)), favorites: previous.favorites.filter((id) => liveIds.has(id)),
     liked: previous.liked.filter((id) => liveIds.has(id)), disliked: previous.disliked.filter((id) => liveIds.has(id)),
     playlists: previous.playlists.map((playlist) => ({ ...playlist, trackIds: playlist.trackIds.filter((id) => liveIds.has(id)) })),
@@ -370,11 +413,11 @@ async function mediaResponse(request) {
   let stats
   try {
     const token = new URL(request.url).pathname.slice(1)
-    filePath = await fs.realpath(Buffer.from(token, 'base64url').toString())
+    filePath = await retryTransient(() => fs.realpath(Buffer.from(token, 'base64url').toString()))
     const allowedRoots = [libraryRoot, artworkPath()].filter(Boolean)
-    const canonicalRoots = await Promise.all(allowedRoots.map((root) => fs.realpath(root).catch(() => '')))
+    const canonicalRoots = await Promise.all(allowedRoots.map((root) => retryTransient(() => fs.realpath(root)).catch(() => '')))
     if (!canonicalRoots.some((root) => root && isWithin(root, filePath))) throw new Error('Path is outside the media library')
-    stats = await fs.stat(filePath)
+    stats = await retryTransient(() => fs.stat(filePath))
     if (!stats.isFile()) throw new Error('Not a file')
   } catch {
     return new Response(null, { status: 404 })
@@ -406,7 +449,7 @@ async function mediaResponse(request) {
     ...(status === 206 ? { 'Content-Range': `bytes ${start}-${end}/${stats.size}` } : {}),
   }
   if (request.method === 'HEAD') return new Response(null, { status, headers })
-  const stream = createReadStream(filePath, { start, end })
+  const stream = Readable.from(resilientFileChunks(filePath, start, end))
   return new Response(Readable.toWeb(stream), { status, headers })
 }
 

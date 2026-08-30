@@ -248,7 +248,11 @@ function App() {
   const audioRef = useRef<HTMLAudioElement>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const lastElapsedUpdate = useRef(0)
+  const playbackRetryCount = useRef(0)
+  const playbackRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const playbackMetadataRetry = useRef<(() => void) | null>(null)
   const current = queue[queueIndex]
+  const currentTrackId = useRef<string | undefined>(current?.id)
 
   useEffect(() => {
     window.polaris?.getLibrary().then((value) => {
@@ -335,7 +339,18 @@ function App() {
   useEffect(() => {
     const audio = audioRef.current
     if (!audio || !current) return
+    currentTrackId.current = current.id
+    playbackRetryCount.current = 0
+    if (playbackRetryTimer.current) clearTimeout(playbackRetryTimer.current)
+    if (playbackMetadataRetry.current) audio.removeEventListener('loadedmetadata', playbackMetadataRetry.current)
+    playbackMetadataRetry.current = null
     audio.src = current.url
+    return () => {
+      currentTrackId.current = undefined
+      if (playbackRetryTimer.current) clearTimeout(playbackRetryTimer.current)
+      if (playbackMetadataRetry.current) audio.removeEventListener('loadedmetadata', playbackMetadataRetry.current)
+      playbackMetadataRetry.current = null
+    }
   }, [current])
 
   useEffect(() => {
@@ -353,6 +368,33 @@ function App() {
     if (shuffle && direction > 0) setQueueIndex(Math.floor(Math.random() * queue.length))
     else setQueueIndex((index) => (index + direction + queue.length) % queue.length)
     setPlaying(true)
+  }
+
+  const handlePlaybackError = (audio: HTMLAudioElement) => {
+    const message = audio.error?.message || ''
+    const recoverable = audio.error?.code === MediaError.MEDIA_ERR_NETWORK || /PIPELINE_ERROR_READ|data source error/i.test(message)
+    if (recoverable && current && playbackRetryCount.current < 5) {
+      playbackRetryCount.current += 1
+      const resumeAt = audio.currentTime || elapsed
+      const retryTrackId = current.id
+      playbackRetryTimer.current = setTimeout(() => {
+        if (currentTrackId.current !== retryTrackId) return
+        if (playbackMetadataRetry.current) audio.removeEventListener('loadedmetadata', playbackMetadataRetry.current)
+        const resumePlayback = () => {
+          playbackMetadataRetry.current = null
+          if (currentTrackId.current !== retryTrackId) return
+          audio.currentTime = Math.min(resumeAt, Number.isFinite(audio.duration) ? audio.duration : resumeAt)
+          audio.play().then(() => setPlaying(true)).catch(() => {})
+        }
+        playbackMetadataRetry.current = resumePlayback
+        audio.addEventListener('loadedmetadata', resumePlayback, { once: true })
+        audio.src = current.url
+        audio.load()
+      }, Math.min(3000, 500 * (2 ** (playbackRetryCount.current - 1))))
+      return
+    }
+    setPlaying(false)
+    setPlaybackError(audio.error?.message || 'This audio format could not be played.')
   }
 
   const onEnded = () => {
@@ -638,7 +680,7 @@ function App() {
 
   return (
     <div className={`app ${mobilePlayer ? 'mobile-player-open' : ''} ${mobilePlayer && lyricsOpen ? 'lyrics-view' : ''}`}>
-      <audio ref={audioRef} crossOrigin="anonymous" onTimeUpdate={(event) => { const now = performance.now(); if (now - lastElapsedUpdate.current >= 250) { lastElapsedUpdate.current = now; setElapsed(event.currentTarget.currentTime) } }} onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)} onCanPlay={() => setPlaybackError('')} onError={(event) => setPlaybackError(event.currentTarget.error?.message || 'This audio format could not be played.')} onEnded={onEnded} />
+      <audio ref={audioRef} crossOrigin="anonymous" onTimeUpdate={(event) => { const now = performance.now(); if (now - lastElapsedUpdate.current >= 250) { lastElapsedUpdate.current = now; setElapsed(event.currentTarget.currentTime) } }} onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)} onCanPlay={() => setPlaybackError('')} onError={(event) => handlePlaybackError(event.currentTarget)} onEnded={onEnded} />
       <header className="titlebar"><div className="wordmark"><span><Sparkles /></span> POLARIS</div>{(query || selectedAlbum || selectedArtist) && <IconButton className="nav-back" label="Go back" onClick={goBack}><ArrowLeft /></IconButton>}<div className="global-search"><Search /><input value={query} onChange={(event) => updateSearch(event.target.value)} placeholder="Search songs, artists, albums" />{query && <IconButton label="Clear search" onClick={() => setQuery('')}><X /></IconButton>}</div></header>
       <aside className="sidebar">
         <nav>
