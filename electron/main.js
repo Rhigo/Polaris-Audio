@@ -23,6 +23,7 @@ let queuedScanFolder = ''
 let libraryWatcher
 let watchTimer
 let watchPoll
+let cacheWriteQueue = Promise.resolve()
 const artistImageRequests = new Map()
 let musicBrainzQueue = Promise.resolve()
 let lastMusicBrainzRequest = 0
@@ -108,6 +109,17 @@ async function readCache() {
 
 async function writeCache(data) {
   await fs.writeFile(cachePath(), JSON.stringify(data), 'utf8')
+}
+
+function updateCache(update) {
+  const operation = cacheWriteQueue.then(async () => {
+    const current = await readCache()
+    const next = normalizeLibrary(await update(current))
+    await writeCache(next)
+    return next
+  })
+  cacheWriteQueue = operation.then(() => undefined, () => undefined)
+  return operation
 }
 
 async function discoverFiles(root) {
@@ -314,14 +326,13 @@ async function scanLibrary(folder) {
   const preservedTracks = previous.tracks.filter((track) => !scannedPaths.has(pathKey(track.path)) && unavailableDirectories.some((directory) => isWithin(directory, track.path)))
   const liveTracks = [...tracks.filter(Boolean), ...preservedTracks]
   const liveIds = new Set(liveTracks.map((track) => track.id))
-  const library = {
+  const library = await updateCache((latest) => ({
     folder, tracks: liveTracks,
-    history: previous.history.filter((id) => liveIds.has(id)), favorites: previous.favorites.filter((id) => liveIds.has(id)),
-    liked: previous.liked.filter((id) => liveIds.has(id)), disliked: previous.disliked.filter((id) => liveIds.has(id)),
-    playlists: previous.playlists.map((playlist) => ({ ...playlist, trackIds: playlist.trackIds.filter((id) => liveIds.has(id)) })),
-    settings: previous.settings,
-  }
-  await writeCache(library)
+    history: latest.history.filter((id) => liveIds.has(id)), favorites: latest.favorites.filter((id) => liveIds.has(id)),
+    liked: latest.liked.filter((id) => liveIds.has(id)), disliked: latest.disliked.filter((id) => liveIds.has(id)),
+    playlists: latest.playlists.map((playlist) => ({ ...playlist, trackIds: playlist.trackIds.filter((id) => liveIds.has(id)) })),
+    settings: latest.settings,
+  }))
   libraryRoot = folder
   return library
 }
@@ -501,10 +512,9 @@ app.whenReady().then(async () => {
     return folder && path.resolve(folder) === path.resolve(library.folder) ? requestScan(folder) : library
   })
   ipcMain.handle('library:save-state', async (_, state) => {
-    const library = await readCache()
     const allowed = {}
     for (const key of ['history', 'favorites', 'liked', 'disliked', 'playlists', 'settings']) if (state && key in state) allowed[key] = state[key]
-    await writeCache(normalizeLibrary({ ...library, ...allowed }))
+    await updateCache((library) => ({ ...library, ...allowed }))
   })
   ipcMain.handle('lyrics:get', async (_, lyricPath, embedded, trackPath, track) => {
     try {

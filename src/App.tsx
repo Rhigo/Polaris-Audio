@@ -90,23 +90,26 @@ function sortedArtists(tracks: Track[], sort: ArtistSort, counts: Map<string, nu
   })
 }
 
-function buildSupermix(library: Library, variation: number) {
-  const recent = new Map(library.history.map((id, index) => [id, index]))
+function buildSupermix(tracks: Track[], history: string[], favoriteIds: string[], likedIds: string[], dislikedIds: string[], variation: number) {
+  const recent = new Map(history.map((id, index) => [id, index]))
+  const favorites = new Set(favoriteIds)
+  const liked = new Set(likedIds)
+  const disliked = new Set(dislikedIds)
   const favoriteArtists = new Map<string, number>()
   const favoriteGenres = new Map<string, number>()
-  for (const track of library.tracks) {
-    if (!library.favorites.includes(track.id)) continue
+  for (const track of tracks) {
+    if (!favorites.has(track.id)) continue
     favoriteArtists.set(track.artist, (favoriteArtists.get(track.artist) || 0) + 1)
     if (track.genre) favoriteGenres.set(track.genre, (favoriteGenres.get(track.genre) || 0) + 1)
   }
   const score = (track: Track) => {
     const historyIndex = recent.get(track.id)
-    const affinity = (library.favorites.includes(track.id) ? 20 : 0) + (library.liked.includes(track.id) ? 35 : 0) - (library.disliked.includes(track.id) ? 1000 : 0) + (favoriteArtists.get(track.artist) || 0) * 4 + (favoriteGenres.get(track.genre) || 0) * 2
+    const affinity = (favorites.has(track.id) ? 20 : 0) + (liked.has(track.id) ? 35 : 0) - (disliked.has(track.id) ? 1000 : 0) + (favoriteArtists.get(track.artist) || 0) * 4 + (favoriteGenres.get(track.genre) || 0) * 2
     const recency = historyIndex === undefined ? 6 : historyIndex < 20 ? -10 + historyIndex * 0.3 : 2
     const noise = Math.abs(Math.sin([...track.id].reduce((sum, char) => sum + char.charCodeAt(0), variation + 1))) * 8
     return affinity + recency + noise
   }
-  const candidates = library.tracks.filter((track) => !library.disliked.includes(track.id)).sort((left, right) => score(right) - score(left))
+  const candidates = tracks.filter((track) => !disliked.has(track.id)).sort((left, right) => score(right) - score(left))
   const result: Track[] = []
   for (const track of candidates) {
     if (result.length >= 100) break
@@ -179,38 +182,42 @@ function ArtistCard({ artist, count, onClick }: { artist: string; count: number;
 
 function Visualizer({ analyser, running, settings }: { analyser: AnalyserNode | null; running: boolean; settings: Settings }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const { visualizerStyle, visualizerIntensity, visualizerOpacity, visualizerColor } = settings
   useEffect(() => {
     if (!analyser || !running) return
     let frame = 0
+    let lastDraw = 0
     const data = new Uint8Array(analyser.frequencyBinCount)
-    const draw = () => {
+    const draw = (timestamp: number) => {
+      frame = requestAnimationFrame(draw)
+      if (timestamp - lastDraw < 33) return
+      lastDraw = timestamp
       const canvas = canvasRef.current
       if (!canvas) return
       const context = canvas.getContext('2d')
       if (!context) return
-      const ratio = window.devicePixelRatio || 1
+      const ratio = Math.min(2, window.devicePixelRatio || 1)
       const width = canvas.clientWidth * ratio
       const height = canvas.clientHeight * ratio
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height }
-      if (settings.visualizerStyle === 'waveform') analyser.getByteTimeDomainData(data)
+      if (visualizerStyle === 'waveform') analyser.getByteTimeDomainData(data)
       else analyser.getByteFrequencyData(data)
       context.clearRect(0, 0, width, height)
       const bars = Math.min(72, Math.floor(width / (7 * ratio)))
       const step = Math.max(1, Math.floor(data.length * 0.55 / bars))
       for (let index = 0; index < bars; index += 1) {
-        const raw = settings.visualizerStyle === 'waveform' ? Math.abs(data[index * step] - 128) / 128 : data[index * step] / 255
-        const value = Math.min(1, raw * (0.45 + settings.visualizerIntensity * 1.3))
-        const barHeight = Math.max(2 * ratio, value * height * (settings.visualizerStyle === 'ambient' ? 0.42 : 0.88))
+        const raw = visualizerStyle === 'waveform' ? Math.abs(data[index * step] - 128) / 128 : data[index * step] / 255
+        const value = Math.min(1, raw * (0.45 + visualizerIntensity * 1.3))
+        const barHeight = Math.max(2 * ratio, value * height * (visualizerStyle === 'ambient' ? 0.42 : 0.88))
         const barWidth = width / bars - 3 * ratio
-        context.globalAlpha = settings.visualizerOpacity * (0.35 + value * 0.65)
-        context.fillStyle = settings.visualizerColor
+        context.globalAlpha = visualizerOpacity * (0.35 + value * 0.65)
+        context.fillStyle = visualizerColor
         context.fillRect(index * width / bars, height - barHeight, barWidth, barHeight)
       }
-      frame = requestAnimationFrame(draw)
     }
-    draw()
+    frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [analyser, running, settings])
+  }, [analyser, running, visualizerColor, visualizerIntensity, visualizerOpacity, visualizerStyle])
   return <canvas className="visualizer" ref={canvasRef} />
 }
 
@@ -239,7 +246,7 @@ function App() {
   const [playing, setPlaying] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [volume, setVolume] = useState(defaultSettings.volume)
+  const [volume, setVolumeState] = useState(defaultSettings.volume)
   const [shuffle, setShuffle] = useState(defaultSettings.shuffle)
   const [repeat, setRepeat] = useState<RepeatMode>(defaultSettings.repeat)
   const [lyricsOpen, setLyricsOpen] = useState(false)
@@ -255,24 +262,44 @@ function App() {
   const audioRef = useRef<HTMLAudioElement>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const lastElapsedUpdate = useRef(0)
+  const volumeFrame = useRef(0)
+  const pendingVolume = useRef(defaultSettings.volume)
+  const settingsPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const settingsRef = useRef(defaultSettings)
+  const settingsDirty = useRef(false)
   const playbackRetryCount = useRef(0)
   const playbackRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const playbackMetadataRetry = useRef<(() => void) | null>(null)
   const current = queue[queueIndex]
   const currentTrackId = useRef<string | undefined>(current?.id)
 
+  const setVolume = (value: number) => {
+    pendingVolume.current = value
+    if (audioRef.current) audioRef.current.volume = value
+    if (volumeFrame.current) return
+    volumeFrame.current = requestAnimationFrame(() => {
+      volumeFrame.current = 0
+      setVolumeState(pendingVolume.current)
+    })
+  }
+
   useEffect(() => {
     window.polaris?.getLibrary().then((value) => {
       setLibrary(value)
+      settingsRef.current = value.settings
       setVolume(value.settings.volume)
       setShuffle(value.settings.shuffle)
       setRepeat(value.settings.repeat)
-      setVisualizerOpen(value.settings.visualizerStyle !== 'off')
+      setVisualizerOpen(false)
     })
     return window.polaris?.onScanProgress(setScan)
   }, [])
 
   useEffect(() => window.polaris?.onLibraryUpdated((value) => { setLibrary(value); setScan(null) }), [])
+
+  useEffect(() => {
+    settingsRef.current = library.settings
+  }, [library.settings])
 
   useEffect(() => {
     if (!openRowMenu) return
@@ -315,23 +342,32 @@ function App() {
     return () => { active = false }
   }, [selectedArtist])
 
-  useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = volume
-  }, [volume])
+  useEffect(() => () => {
+    if (volumeFrame.current) cancelAnimationFrame(volumeFrame.current)
+    if (settingsPersistTimer.current) clearTimeout(settingsPersistTimer.current)
+    if (settingsDirty.current) window.polaris?.saveState({ settings: settingsRef.current })
+  }, [])
 
   const ensureAnalyser = () => {
     if (audioContextRef.current || !audioRef.current) return
     const context = new AudioContext()
-    const source = context.createMediaElementSource(audioRef.current)
-    const node = context.createAnalyser()
-    node.fftSize = 256
-    source.connect(node)
-    node.connect(context.destination)
-    audioContextRef.current = context
-    setAnalyser(node)
+    try {
+      const source = context.createMediaElementSource(audioRef.current)
+      const node = context.createAnalyser()
+      node.fftSize = 256
+      source.connect(node)
+      node.connect(context.destination)
+      audioContextRef.current = context
+      setAnalyser(node)
+    } catch {
+      context.close().catch(() => {})
+    }
   }
 
+  const resumeAudioGraph = () => audioContextRef.current?.resume().catch(() => {})
+
   const playTrack = (track: Track, tracks = library.tracks) => {
+    resumeAudioGraph()
     setPlaybackError('')
     setLyrics([])
     const nextQueue = tracks.length ? tracks : [track]
@@ -351,7 +387,10 @@ function App() {
     if (playbackRetryTimer.current) clearTimeout(playbackRetryTimer.current)
     if (playbackMetadataRetry.current) audio.removeEventListener('loadedmetadata', playbackMetadataRetry.current)
     playbackMetadataRetry.current = null
+    audio.pause()
     audio.src = current.url
+    setElapsed(0)
+    setDuration(current.duration)
     return () => {
       currentTrackId.current = undefined
       if (playbackRetryTimer.current) clearTimeout(playbackRetryTimer.current)
@@ -363,7 +402,9 @@ function App() {
   useEffect(() => {
     const audio = audioRef.current
     if (!audio || !current) return
+    const trackId = current.id
     if (playing) audio.play().catch((error: unknown) => {
+      if (currentTrackId.current !== trackId || error instanceof DOMException && error.name === 'AbortError') return
       setPlaying(false)
       setPlaybackError(error instanceof Error ? error.message : 'This song could not be started.')
     })
@@ -372,7 +413,8 @@ function App() {
 
   const moveTrack = (direction: number) => {
     if (!queue.length) return
-    if (shuffle && direction > 0) setQueueIndex(Math.floor(Math.random() * queue.length))
+    resumeAudioGraph()
+    if (shuffle && direction > 0 && queue.length > 1) setQueueIndex((index) => (index + 1 + Math.floor(Math.random() * (queue.length - 1))) % queue.length)
     else setQueueIndex((index) => (index + direction + queue.length) % queue.length)
     setPlaying(true)
   }
@@ -384,6 +426,7 @@ function App() {
       playbackRetryCount.current += 1
       const resumeAt = audio.currentTime || elapsed
       const retryTrackId = current.id
+      const retryUrl = current.url
       playbackRetryTimer.current = setTimeout(() => {
         if (currentTrackId.current !== retryTrackId) return
         if (playbackMetadataRetry.current) audio.removeEventListener('loadedmetadata', playbackMetadataRetry.current)
@@ -395,7 +438,7 @@ function App() {
         }
         playbackMetadataRetry.current = resumePlayback
         audio.addEventListener('loadedmetadata', resumePlayback, { once: true })
-        audio.src = current.url
+        audio.src = retryUrl
         audio.load()
       }, Math.min(3000, 500 * (2 ** (playbackRetryCount.current - 1))))
       return
@@ -429,7 +472,22 @@ function App() {
   }
 
   const updateSettings = (patch: Partial<Settings>) => {
-    const settings = { ...library.settings, ...patch }
+    const settings = { ...settingsRef.current, ...patch }
+    settingsRef.current = settings
+    if (patch.volume !== undefined && Object.keys(patch).length === 1) {
+      settingsDirty.current = true
+      if (settingsPersistTimer.current) clearTimeout(settingsPersistTimer.current)
+      settingsPersistTimer.current = setTimeout(() => {
+        settingsPersistTimer.current = null
+        settingsDirty.current = false
+        persistLibraryState({ settings: settingsRef.current })
+      }, 250)
+      return
+    }
+    if (settingsPersistTimer.current) {
+      clearTimeout(settingsPersistTimer.current)
+      settingsPersistTimer.current = null
+    }
     persistLibraryState({ settings })
   }
 
@@ -500,10 +558,12 @@ function App() {
     const searchText = new Map<string, { all: string; title: string; album: string; artist: string }>()
     for (const track of library.tracks) {
       tracksById.set(track.id, track)
-      if (track.genre) tracksByGenre.set(track.genre, [...(tracksByGenre.get(track.genre) || []), track])
-      if (track.year) { const decade = Math.floor(track.year / 10) * 10; tracksByDecade.set(decade, [...(tracksByDecade.get(decade) || []), track]) }
-      for (const artist of new Set([track.artist, track.albumArtist].filter(Boolean))) tracksByArtist.set(artist, [...(tracksByArtist.get(artist) || []), track])
-      tracksByAlbum.set(`${track.albumArtist}\0${track.album}`, [...(tracksByAlbum.get(`${track.albumArtist}\0${track.album}`) || []), track])
+      if (track.genre) { const tracks = tracksByGenre.get(track.genre); if (tracks) tracks.push(track); else tracksByGenre.set(track.genre, [track]) }
+      if (track.year) { const decade = Math.floor(track.year / 10) * 10; const tracks = tracksByDecade.get(decade); if (tracks) tracks.push(track); else tracksByDecade.set(decade, [track]) }
+      for (const artist of new Set([track.artist, track.albumArtist].filter(Boolean))) { const tracks = tracksByArtist.get(artist); if (tracks) tracks.push(track); else tracksByArtist.set(artist, [track]) }
+      const albumKey = `${track.albumArtist}\0${track.album}`
+      const albumTracks = tracksByAlbum.get(albumKey)
+      if (albumTracks) albumTracks.push(track); else tracksByAlbum.set(albumKey, [track])
       const names = new Set([track.artist, track.albumArtist].filter(Boolean))
       for (const name of names) artistCounts.set(name, (artistCounts.get(name) || 0) + 1)
       searchText.set(track.id, {
@@ -519,7 +579,7 @@ function App() {
   }, [library.tracks])
   const artistCount = (artist: string) => libraryIndex.artistCounts.get(artist) || 0
   const historyTracks = useMemo(() => library.history.map((id) => libraryIndex.tracksById.get(id)).filter(Boolean) as Track[], [library.history, libraryIndex])
-  const supermixTracks = useMemo(() => buildSupermix(library, supermixVariation), [library, supermixVariation])
+  const supermixTracks = useMemo(() => buildSupermix(library.tracks, library.history, library.favorites, library.liked, library.disliked, supermixVariation), [library.disliked, library.favorites, library.history, library.liked, library.tracks, supermixVariation])
   const songs = useMemo(() => sortedSongs(library.tracks, songSort), [library.tracks, songSort])
   const albums = useMemo(() => sortedAlbums(libraryIndex.albums, albumSort), [libraryIndex, albumSort])
   const artists = useMemo(() => sortedArtists(libraryIndex.artists, artistSort, libraryIndex.artistCounts), [libraryIndex, artistSort])
@@ -715,7 +775,7 @@ function App() {
         <button className="mobile-collapse" aria-label="Close full player" onClick={() => setMobilePlayer(false)}><ChevronDown /></button>
         <div className="now-track">{current ? <><button className="now-art-button" onClick={() => setMobilePlayer(true)} aria-label="Open full player"><Artwork track={current} size="small" /></button><span><strong>{current.title}</strong><span className="now-links"><button onClick={() => openArtist(current)}>{current.artist}</button><span>·</span><button onClick={() => openAlbum(current)}>{current.album}</button></span></span><IconButton className="now-love" label={library.favorites.includes(current.id) ? 'Remove from loved songs' : 'Love song'} active={library.favorites.includes(current.id)} onClick={() => toggleFavorite(current.id)}><Heart /></IconButton></> : <><div className="artwork artwork--small"><Music2 /></div><span><strong>Nothing playing</strong><small>Choose a song from your library</small></span></>}</div>
         <div className="mobile-art"><Artwork track={current} size="large" /></div>
-        <div className="player-center"><div className="transport"><IconButton label="Shuffle" active={shuffle} onClick={() => { const next = !shuffle; setShuffle(next); updateSettings({ shuffle: next }) }}><Shuffle /></IconButton><IconButton label="Previous" onClick={() => moveTrack(-1)}><SkipBack /></IconButton><button className="transport-play" onClick={() => current ? setPlaying(!playing) : library.tracks[0] && playTrack(library.tracks[0])} aria-label={playing ? 'Pause' : 'Play'}>{playing ? <Pause /> : <Play />}</button><IconButton label="Next" onClick={() => moveTrack(1)}><SkipForward /></IconButton><IconButton label={`Repeat ${repeat}`} active={repeat !== 'off'} onClick={() => { const next = repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off'; setRepeat(next); updateSettings({ repeat: next }) }}>{repeat === 'one' ? <Repeat1 /> : <Repeat />}</IconButton></div><div className="timeline"><span>{formatTime(elapsed)}</span><input type="range" min="0" max={duration || 1} value={elapsed} onChange={(event) => { const value = Number(event.target.value); setElapsed(value); if (audioRef.current) audioRef.current.currentTime = value }} /><span>{formatTime(duration)}</span></div></div>
+        <div className="player-center"><div className="transport"><IconButton label="Shuffle" active={shuffle} onClick={() => { const next = !shuffle; setShuffle(next); updateSettings({ shuffle: next }) }}><Shuffle /></IconButton><IconButton label="Previous" onClick={() => moveTrack(-1)}><SkipBack /></IconButton><button className="transport-play" onClick={() => { if (current) { if (!playing) resumeAudioGraph(); setPlaying(!playing) } else if (library.tracks[0]) playTrack(library.tracks[0]) }} aria-label={playing ? 'Pause' : 'Play'}>{playing ? <Pause /> : <Play />}</button><IconButton label="Next" onClick={() => moveTrack(1)}><SkipForward /></IconButton><IconButton label={`Repeat ${repeat}`} active={repeat !== 'off'} onClick={() => { const next = repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off'; setRepeat(next); updateSettings({ repeat: next }) }}>{repeat === 'one' ? <Repeat1 /> : <Repeat />}</IconButton></div><div className="timeline"><span>{formatTime(elapsed)}</span><input type="range" min="0" max={duration || 1} value={elapsed} onChange={(event) => { const value = Number(event.target.value); setElapsed(value); if (audioRef.current) audioRef.current.currentTime = value }} /><span>{formatTime(duration)}</span></div></div>
         <div className="player-tools">{current && <><IconButton label="Thumbs up" active={library.liked.includes(current.id)} onClick={() => rateTrack(current.id, 'up')}><ThumbsUp /></IconButton><IconButton label="Thumbs down" active={library.disliked.includes(current.id)} onClick={() => rateTrack(current.id, 'down')}><ThumbsDown /></IconButton><div className="player-playlist-wrap"><IconButton label="Add to playlist" active={openRowMenu === 'player-playlists'} onClick={() => setOpenRowMenu(openRowMenu === 'player-playlists' ? '' : 'player-playlists')}><Plus /></IconButton>{openRowMenu === 'player-playlists' && <div className="player-playlist-menu">{library.playlists.length ? library.playlists.map((playlist) => <button key={playlist.id} onClick={() => { addTrackToPlaylist(playlist.id, current.id); setOpenRowMenu('') }}><ListMusic />{playlist.name}</button>) : <span>Create a playlist first</span>}</div>}</div></>}<IconButton label="Visualizer" active={visualizerOpen} onClick={() => { if (!visualizerOpen) { ensureAnalyser(); audioContextRef.current?.resume() }; setVisualizerOpen(!visualizerOpen) }}><SlidersHorizontal /></IconButton><IconButton label={lyricsUnavailable ? 'Lyrics unavailable' : 'Lyrics'} disabled={lyricsUnavailable} active={lyricsOpen} onClick={() => { setLyricsOpen(!lyricsOpen); setQueueOpen(false) }}><Mic2 /></IconButton><IconButton label="Queue" active={queueOpen} onClick={() => { setQueueOpen(!queueOpen); setLyricsOpen(false) }}><ListMusic /></IconButton><div className="volume">{volume === 0 ? <VolumeX /> : volume < .5 ? <Volume1 /> : <Volume2 />}<input type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => { const next = Number(event.target.value); setVolume(next); updateSettings({ volume: next }) }} /></div><IconButton label="Open full player" disabled={!current} onClick={() => setMobilePlayer(true)}><Maximize2 /></IconButton></div>
       </div>
     </div>

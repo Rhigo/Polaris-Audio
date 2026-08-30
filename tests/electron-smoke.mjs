@@ -60,12 +60,17 @@ const music = path.join(root, 'music')
 await fs.mkdir(profile, { recursive: true })
 await fs.mkdir(music, { recursive: true })
 const trackPath = path.join(music, 'Polaris Test Tone.wav')
+const secondTrackPath = path.join(music, 'Skip Target.wav')
 const privatePath = path.join(root, 'not-in-library.txt')
 await fs.writeFile(trackPath, createWave())
+await fs.writeFile(secondTrackPath, createWave())
 await fs.writeFile(privatePath, 'private test data', 'utf8')
 await fs.writeFile(path.join(music, 'Polaris Test Tone.lrc'), '[00:00.00]Polaris smoke lyric\n[00:01.00]Playback is working\n', 'utf8')
+await fs.writeFile(path.join(music, 'Skip Target.lrc'), '[00:00.00]Skip smoke lyric\n', 'utf8')
 const id = createHash('sha1').update(trackPath).digest('hex')
 const url = `polaris://media/${Buffer.from(trackPath).toString('base64url')}`
+const secondId = createHash('sha1').update(secondTrackPath).digest('hex')
+const secondUrl = `polaris://media/${Buffer.from(secondTrackPath).toString('base64url')}`
 await fs.writeFile(path.join(profile, 'library.json'), JSON.stringify({
   folder: music,
   history: [],
@@ -75,6 +80,11 @@ await fs.writeFile(path.join(profile, 'library.json'), JSON.stringify({
     albumArtist: 'Coldplay', album: 'Playback Tests', year: 2026, track: 1,
     disc: 1, genre: 'Test', duration: 3, sampleRate: 44100, bitDepth: 16,
     lossless: true, artwork: '', lyricPath: '', addedAt: Date.now(),
+  }, {
+    id: secondId, path: secondTrackPath, url: secondUrl, title: 'Skip Target', artist: 'Coldplay',
+    albumArtist: 'Coldplay', album: 'Skip Tests', year: 2025, track: 1,
+    disc: 1, genre: 'Skip', duration: 3, sampleRate: 44100, bitDepth: 16,
+    lossless: true, artwork: '', lyricPath: '', addedAt: Date.now() - 1,
   }],
 }), 'utf8')
 
@@ -124,13 +134,38 @@ try {
     throw new Error(`Invalid resilient media response: ${JSON.stringify(range)}`)
   }
   if (audioState.paused || audioState.currentTime <= 0.25) throw new Error(`Playback did not advance: ${JSON.stringify(audioState)}`)
+  const skipStarted = performance.now()
+  await page.getByRole('button', { name: 'Next' }).click()
+  await page.waitForFunction((expectedUrl) => { const audio = document.querySelector('audio'); return audio?.currentSrc === expectedUrl && !audio.paused && audio.currentTime > 0.1 }, secondUrl, { timeout: 3000 })
+  await page.getByRole('button', { name: 'Previous' }).click()
+  await page.waitForFunction((expectedUrl) => { const audio = document.querySelector('audio'); return audio?.currentSrc === expectedUrl && !audio.paused && audio.currentTime > 0.1 }, url, { timeout: 3000 })
+  const skipMs = Math.round(performance.now() - skipStarted)
+  if (skipMs > 2500) throw new Error(`Track skipping was unexpectedly slow: ${skipMs}ms`)
+  await page.getByRole('button', { name: 'Visualizer' }).click()
+  await page.locator('.visualizer').waitFor()
+  const volumeStartedAt = await page.locator('audio').evaluate((audio) => audio.currentTime)
+  await page.locator('.volume input').evaluate((input) => {
+    for (let step = 0; step <= 80; step += 1) {
+      input.value = String(0.2 + step / 200)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+  })
+  await page.waitForFunction(() => window.polaris.getLibrary().then((value) => Math.abs(value.settings.volume - 0.6) < 0.001), null, { timeout: 3000 })
+  await page.waitForFunction((startedAt) => { const audio = document.querySelector('audio'); return audio && !audio.paused && audio.currentTime > startedAt + 0.2 }, volumeStartedAt, { timeout: 3000 })
   const blockedUrl = `polaris://media/${Buffer.from(privatePath).toString('base64url')}`
   const blockedStatus = await page.evaluate(async (mediaUrl) => (await fetch(mediaUrl)).status, blockedUrl)
   if (blockedStatus !== 404) throw new Error(`Media path guard failed with status ${blockedStatus}`)
   console.log('media guard passed; starting rescan')
-  const scanMs = await page.evaluate(async (folder) => { const started = performance.now(); await Promise.all([window.polaris.rescan(folder), window.polaris.rescan(folder)]); return performance.now() - started }, music)
+  const scanMs = await page.evaluate(async ({ folder, historyId }) => {
+    const started = performance.now()
+    await Promise.all([window.polaris.rescan(folder), window.polaris.saveState({ history: [historyId] })])
+    return performance.now() - started
+  }, { folder: music, historyId: secondId })
   console.log(`rescan completed in ${Math.round(scanMs)}ms`)
   if (scanMs > 5000) throw new Error(`Fixture rescan was unexpectedly slow: ${scanMs}ms`)
+  const stateAfterScan = await page.evaluate(() => window.polaris.getLibrary())
+  if (stateAfterScan.history[0] !== secondId) throw new Error(`Concurrent rescan lost user state: ${JSON.stringify(stateAfterScan.history)}`)
+  await page.evaluate((historyId) => window.polaris.saveState({ history: [historyId] }), id)
 
   await page.getByRole('button', { name: 'Lyrics' }).click()
   await page.getByRole('button', { name: 'Polaris smoke lyric' }).waitFor({ timeout: 5000 })
@@ -164,7 +199,7 @@ try {
   await page.getByRole('button', { name: /Test 1 songs/ }).click()
   await page.getByRole('heading', { name: 'Test', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Decades', exact: true }).click()
-  await page.getByRole('button', { name: /2020s 1 songs/ }).click()
+  await page.getByRole('button', { name: /2020s 2 songs/ }).click()
   await page.getByRole('heading', { name: '2020s', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Songs', exact: true }).click()
 
@@ -172,7 +207,7 @@ try {
   await sort.selectOption('title-desc')
   if (await sort.inputValue() !== 'title-desc') throw new Error('Song sorting did not update')
 
-  await page.locator('.track-artist').click()
+  await page.locator('.track-artist').first().click()
   await page.getByRole('heading', { name: 'Coldplay' }).waitFor()
   await page.getByRole('button', { name: 'Instagram' }).waitFor({ timeout: 10000 })
   await page.getByText('A test biography.').waitFor()
@@ -199,7 +234,7 @@ try {
   await page.getByRole('button', { name: 'Save playlist name' }).click()
   await page.getByRole('heading', { name: 'Moonlight' }).waitFor()
   await page.getByRole('button', { name: 'Songs', exact: true }).click()
-  await page.locator('.track-row').first().dragTo(page.locator('.playlist-nav button').filter({ hasText: 'Moonlight' }))
+  await page.locator('.track-row').filter({ hasText: 'Polaris Test Tone' }).dragTo(page.locator('.playlist-nav button').filter({ hasText: 'Moonlight' }))
   await page.locator('.playlist-nav button').filter({ hasText: 'Moonlight' }).click()
   await page.getByRole('button', { name: 'Play Polaris Test Tone' }).waitFor()
   const savedPlaylist = await page.evaluate(() => window.polaris.getLibrary().then((value) => value.playlists[0]))
