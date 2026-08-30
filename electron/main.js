@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
 import { createHash } from 'node:crypto'
 import { createReadStream, promises as fs, watch } from 'node:fs'
 import path from 'node:path'
@@ -23,6 +23,32 @@ let libraryWatcher
 let watchTimer
 let watchPoll
 const artistImageRequests = new Map()
+let musicBrainzQueue = Promise.resolve()
+let lastMusicBrainzRequest = 0
+
+const musicBrainzFetch = (url) => {
+  const request = musicBrainzQueue.then(async () => {
+    const wait = Math.max(0, 1100 - (Date.now() - lastMusicBrainzRequest))
+    if (wait) await new Promise((resolve) => setTimeout(resolve, wait))
+    lastMusicBrainzRequest = Date.now()
+    return net.fetch(url, { headers: { 'User-Agent': 'PolarisAudio/1.0 (https://github.com/Rhigo/Polaris-Audio)' }, signal: AbortSignal.timeout(8000) })
+  })
+  musicBrainzQueue = request.catch(() => {})
+  return request
+}
+
+const socialLabel = (url) => {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '')
+    return host.split('.')[0].replace(/^./, (value) => value.toUpperCase())
+  } catch { return 'Website' }
+}
+
+const externalUrl = (value) => {
+  if (!value) return ''
+  if (value.startsWith('//')) return `https:${value}`
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`
+}
 
 if (process.env.POLARIS_USER_DATA) app.setPath('userData', process.env.POLARIS_USER_DATA)
 
@@ -400,17 +426,23 @@ app.whenReady().then(async () => {
       return (await readCache()).settings.onlineLyrics ? onlineLyrics(track) : []
     }
   })
+  ipcMain.handle('external:open', (_, url) => {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return false
+    return shell.openExternal(url).then(() => true, () => false)
+  })
   ipcMain.handle('artist:image', async (_, artist) => {
     if (artistImageRequests.has(artist)) return artistImageRequests.get(artist)
     const request = (async () => {
     try {
       if (!artistImageCache) {
         try { artistImageCache = JSON.parse(await fs.readFile(artistCachePath(), 'utf8')) } catch { artistImageCache = {} }
+        const oldest = Date.now() - 90 * 24 * 60 * 60 * 1000
+        artistImageCache = Object.fromEntries(Object.entries(artistImageCache).filter(([, value]) => typeof value === 'object' && value.cachedAt >= oldest).sort(([, left], [, right]) => right.cachedAt - left.cachedAt).slice(0, 5000))
       }
       const cached = artistImageCache[artist]
       if (cached && typeof cached !== 'string' && Date.now() - cached.cachedAt < 30 * 24 * 60 * 60 * 1000) return cached
 
-      const audioDbUrl = `https://www.theaudiodb.com/api/v1/json/123/search.php?s=${encodeURIComponent(artist)}`
+      const audioDbUrl = `${process.env.AUDIODB_API_URL || 'https://www.theaudiodb.com/api/v1/json/123/search.php'}?s=${encodeURIComponent(artist)}`
       const audioDbResponse = await net.fetch(audioDbUrl, { signal: AbortSignal.timeout(6000) })
       const audioDbData = audioDbResponse.ok ? await audioDbResponse.json() : {}
       const match = audioDbData.artists?.[0]
@@ -418,6 +450,31 @@ app.whenReady().then(async () => {
       let background = match?.strArtistFanart || match?.strArtistFanart2 || match?.strArtistWideThumb || profile
       const biography = match?.strBiographyEN || ''
       const genres = [...new Set([match?.strGenre, match?.strStyle, match?.strMood].filter(Boolean))]
+      let mbid = match?.strMusicBrainzID || match?.idArtistMusicBrainz || ''
+      const audioDbUrls = [match?.strWebsite, match?.strFacebook, match?.strTwitter].map(externalUrl).filter(Boolean)
+      let links = audioDbUrls.map((url) => ({ label: socialLabel(url), url }))
+
+      if (!mbid) {
+        const searchUrl = `${process.env.MUSICBRAINZ_API_URL || 'https://musicbrainz.org/ws/2'}/artist/?query=${encodeURIComponent(`artist:${artist}`)}&limit=3&fmt=json`
+        const searchResponse = await musicBrainzFetch(searchUrl)
+        const searchData = searchResponse.ok ? await searchResponse.json() : {}
+        mbid = searchData.artists?.[0]?.id || ''
+      }
+      if (mbid) {
+        const relationResponse = await musicBrainzFetch(`${process.env.MUSICBRAINZ_API_URL || 'https://musicbrainz.org/ws/2'}/artist/${encodeURIComponent(mbid)}?inc=url-rels&fmt=json`)
+        const relationData = relationResponse.ok ? await relationResponse.json() : {}
+        const relationLinks = (relationData.relations || []).map((relation) => relation.url?.resource).filter((url) => /^https?:\/\//i.test(url)).map((url) => ({ label: socialLabel(url), url }))
+        links = [...new Map([...links, ...relationLinks].map((link) => [link.url, link])).values()].slice(0, 8)
+      }
+
+      let topRecordings = []
+      if (mbid) {
+        const popularityResponse = await net.fetch(`${process.env.LISTENBRAINZ_API_URL || 'https://api.listenbrainz.org/1'}/popularity/top-recordings-for-artist/${encodeURIComponent(mbid)}`, { signal: AbortSignal.timeout(8000) })
+        const popularityData = popularityResponse.ok ? await popularityResponse.json() : {}
+        const candidateRecordings = popularityData.recordings || popularityData.payload?.recordings
+        const recordings = Array.isArray(candidateRecordings) ? candidateRecordings : []
+        topRecordings = recordings.map((recording) => ({ title: recording.recording_name || recording.title || '', listens: recording.listen_count || recording.total_listen_count || 0, listeners: recording.listener_count || recording.total_user_count || 0 })).filter((recording) => recording.title).slice(0, 100)
+      }
 
       if (!profile && !background) {
         const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(artist + ' musician')}&gsrlimit=1&prop=pageimages&pithumbsize=900&format=json&origin=*`
@@ -427,7 +484,7 @@ app.whenReady().then(async () => {
         background = profile
       }
 
-      const images = { profile, background, biography, genres, cachedAt: Date.now() }
+      const images = { profile, background, biography, genres, links, topRecordings, cachedAt: Date.now() }
       artistImageCache[artist] = images
       await fs.writeFile(artistCachePath(), JSON.stringify(artistImageCache), 'utf8')
       return images

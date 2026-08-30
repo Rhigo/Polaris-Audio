@@ -73,6 +73,7 @@ declare global {
       saveState: (state: Partial<Pick<Library, 'history' | 'favorites' | 'liked' | 'disliked' | 'playlists' | 'settings'>>) => Promise<void>
       getLyrics: (lyricPath: string, embedded?: string, trackPath?: string, track?: Pick<Track, 'title' | 'artist' | 'album' | 'duration'>) => Promise<LyricLine[]>
       getArtistImage: (artist: string) => Promise<ArtistImages>
+      openExternal: (url: string) => Promise<boolean>
       onScanProgress: (callback: (progress: ScanProgress) => void) => () => void
       onLibraryUpdated: (callback: (library: Library) => void) => () => void
     }

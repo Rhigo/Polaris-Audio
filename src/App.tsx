@@ -31,6 +31,8 @@ function formatTime(seconds: number) {
   return `${minutes}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
 }
 
+const normalizedTitle = (title: string) => title.toLocaleLowerCase().replace(/\([^)]*\)|\[[^\]]*\]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+
 function uniqueBy<T>(items: T[], key: (item: T) => string) {
   return [...new Map(items.map((item) => [key(item), item])).values()]
 }
@@ -134,14 +136,14 @@ function LyricsDisplay({ lines, loading, activeLine, onSeek, onBack, contrast = 
 function ArtistCard({ artist, count, onClick }: { artist: string; count: number; onClick: () => void }) {
   const [images, setImages] = useState<ArtistImages>({ profile: '', background: '' })
   const cardRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    const card = cardRef.current
-    if (!card || !window.polaris) return
+    useEffect(() => {
+      const card = cardRef.current
+      if (!card || !window.polaris) return
     let current = true
     const observer = new IntersectionObserver((entries) => {
       if (!entries[0]?.isIntersecting) return
       observer.disconnect()
-      window.polaris?.getArtistImage(artist).then((value) => { if (current) setImages(value) })
+        window.polaris?.getArtistImage(artist).then((value) => { if (current) setImages(value) })
     }, { rootMargin: '160px' })
     observer.observe(card)
     return () => { current = false; observer.disconnect() }
@@ -593,7 +595,10 @@ function App() {
       const backgroundImage = fetchedImages.background || profileImage
       const artistGenres = fetchedImages.genres?.length ? fetchedImages.genres : uniqueBy(artistTracks.filter((track) => track.genre), (track) => track.genre).map((track) => track.genre)
       const recentArtistTracks = historyTracks.filter((track) => track.artist === selectedArtist || track.albumArtist === selectedArtist)
-      return <section className="detail-page artist-detail"><div className="detail-backdrop">{backgroundImage && <img src={backgroundImage} alt="" />}</div><div className="artist-hero">{profileImage ? <div className="artist-hero-photo"><img src={profileImage} alt={`${selectedArtist} profile`} /></div> : <div className="artist-hero-photo"><UserRound /></div>}<div><p className="eyebrow">Artist</p><h1>{selectedArtist}</h1><p>{uniqueBy(artistTracks, (track) => track.album).length} albums · {artistTracks.length} songs · {recentArtistTracks.length} recent plays</p>{artistGenres.length ? <div className="genre-list">{artistGenres.map((genre) => <span key={genre}>{genre}</span>)}</div> : null}<button className="round-play heading-play" onClick={() => playTrack(artistTracks[0], artistTracks)}><Play /></button></div></div>{fetchedImages.biography && <p className="artist-biography">{fetchedImages.biography}</p>}<h2 className="section-title">Popular in your library</h2>{renderRows([...artistTracks].sort((left, right) => (library.history.indexOf(left.id) < 0 ? 999 : library.history.indexOf(left.id)) - (library.history.indexOf(right.id) < 0 ? 999 : library.history.indexOf(right.id))).slice(0, 10))}{recentArtistTracks.length > 0 && <><h2 className="section-title">Recently played</h2>{renderRows(recentArtistTracks.slice(0, 8))}</>}<h2 className="section-title">Albums</h2><div className="card-grid">{uniqueBy(artistTracks, (track) => track.album).map((track) => <AlbumCard key={track.album} track={track} onClick={() => openAlbum(track)} />)}</div></section>
+      const globalRanks = new Map((fetchedImages.topRecordings || []).map((recording, index) => [normalizedTitle(recording.title), index]))
+      const globallyPopularLocalTracks = artistTracks.filter((track) => globalRanks.has(normalizedTitle(track.title))).sort((left, right) => (globalRanks.get(normalizedTitle(left.title)) || 0) - (globalRanks.get(normalizedTitle(right.title)) || 0))
+      const popularArtistTracks = globallyPopularLocalTracks.length ? globallyPopularLocalTracks : [...artistTracks].sort((left, right) => (library.history.indexOf(left.id) < 0 ? 999 : library.history.indexOf(left.id)) - (library.history.indexOf(right.id) < 0 ? 999 : library.history.indexOf(right.id)))
+      return <section className="detail-page artist-detail"><div className="detail-backdrop">{backgroundImage && <img src={backgroundImage} alt="" />}</div><div className="artist-hero">{profileImage ? <div className="artist-hero-photo"><img src={profileImage} alt={`${selectedArtist} profile`} /></div> : <div className="artist-hero-photo"><UserRound /></div>}<div><p className="eyebrow">Artist</p><h1>{selectedArtist}</h1><p>{uniqueBy(artistTracks, (track) => track.album).length} albums · {artistTracks.length} songs · {recentArtistTracks.length} recent plays</p>{artistGenres.length ? <div className="genre-list">{artistGenres.map((genre) => <span key={genre}>{genre}</span>)}</div> : null}{fetchedImages.links?.length ? <div className="artist-links">{fetchedImages.links.map((link) => <button key={link.url} onClick={() => window.polaris?.openExternal(link.url)}>{link.label}</button>)}</div> : null}<button className="round-play heading-play" onClick={() => playTrack(artistTracks[0], artistTracks)}><Play /></button></div></div>{fetchedImages.biography && <p className="artist-biography">{fetchedImages.biography}</p>}<h2 className="section-title">Popular in your library</h2>{renderRows(popularArtistTracks.slice(0, 10))}{recentArtistTracks.length > 0 && <><h2 className="section-title">Recently played</h2>{renderRows(recentArtistTracks.slice(0, 8))}</>}<h2 className="section-title">Albums</h2><div className="card-grid">{uniqueBy(artistTracks, (track) => track.album).map((track) => <AlbumCard key={track.album} track={track} onClick={() => openAlbum(track)} />)}</div></section>
     }
     if (view === 'songs') return <section><PageHeading eyebrow="Library" title="Songs" subtitle={`${library.tracks.length.toLocaleString()} tracks`} /><div className="list-toolbar"><SortControl value={songSort} onChange={setSongSort} options={[{ value: 'title-asc', label: 'Title A–Z' }, { value: 'title-desc', label: 'Title Z–A' }, { value: 'artist-asc', label: 'Artist A–Z' }, { value: 'album-asc', label: 'Album A–Z' }, { value: 'newest', label: 'Recently added' }, { value: 'duration', label: 'Longest first' }]} /></div>{renderRows(songs)}</section>
     if (view === 'genres') {

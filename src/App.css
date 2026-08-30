@@ -183,6 +183,9 @@ h1 { margin: 5px 0 9px; color: var(--text); font-size: clamp(34px, 4vw, 58px); l
 .artist-hero p:not(.eyebrow) { margin: 10px 0 0; color: #c6c3c2; font-size: 13px; }
 .genre-list { margin-top: 13px; display: flex; flex-wrap: wrap; gap: 6px; }
 .genre-list span { padding: 5px 8px; color: #dedbd9; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; background: rgba(0,0,0,.24); font-size: 10px; }
+.artist-links { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+.artist-links button { padding: 5px 8px; color: #efedeb; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: rgba(0,0,0,.34); font-size: 10px; }
+.artist-links button:hover { color: white; background: rgba(255,255,255,.12); }
 .artist-biography { max-width: 880px; margin: -5px 0 42px; color: #b7b4b5; font-size: 13px; line-height: 1.75; }
 .settings-groups { max-width: 920px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
 .settings-group { min-height: 220px; padding: 24px; display: flex; flex-direction: column; gap: 18px; background: #151517; }

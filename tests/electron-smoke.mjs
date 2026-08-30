@@ -42,6 +42,17 @@ const lyricsServer = createServer((request, response) => {
 })
 await new Promise((resolve) => lyricsServer.listen(0, '127.0.0.1', resolve))
 const lyricsAddress = lyricsServer.address()
+const artistServer = createServer((request, response) => {
+  const url = new URL(request.url, 'http://localhost')
+  response.setHeader('Content-Type', 'application/json')
+  if (url.pathname === '/audiodb') return response.end(JSON.stringify({ artists: [{ strArtist: 'Coldplay', strBiographyEN: 'A test biography.', strGenre: 'Alternative', strMusicBrainzID: 'test-mbid', strWebsite: 'coldplay.com' }] }))
+  if (url.pathname.includes('/artist/test-mbid')) return response.end(JSON.stringify({ relations: [{ url: { resource: 'https://instagram.com/coldplay' } }] }))
+  if (url.pathname.includes('/top-recordings-for-artist/')) return response.end(JSON.stringify({ recordings: [{ recording_name: 'Polaris Test Tone', listen_count: 500, listener_count: 300 }, { recording_name: 'Cloud Only Song', listen_count: 900, listener_count: 700 }] }))
+  response.statusCode = 404
+  response.end('{}')
+})
+await new Promise((resolve) => artistServer.listen(0, '127.0.0.1', resolve))
+const artistAddress = artistServer.address()
 const profile = path.join(root, 'profile')
 const music = path.join(root, 'music')
 await fs.mkdir(profile, { recursive: true })
@@ -67,7 +78,7 @@ await fs.writeFile(path.join(profile, 'library.json'), JSON.stringify({
 
 const app = await electron.launch({
   args: ['.'],
-  env: { ...process.env, POLARIS_USER_DATA: profile, VITE_DEV_SERVER_URL: 'http://127.0.0.1:4174', LRCLIB_API_URL: `http://127.0.0.1:${lyricsAddress.port}/api/get` },
+  env: { ...process.env, POLARIS_USER_DATA: profile, VITE_DEV_SERVER_URL: 'http://127.0.0.1:4174', LRCLIB_API_URL: `http://127.0.0.1:${lyricsAddress.port}/api/get`, AUDIODB_API_URL: `http://127.0.0.1:${artistAddress.port}/audiodb`, MUSICBRAINZ_API_URL: `http://127.0.0.1:${artistAddress.port}/musicbrainz`, LISTENBRAINZ_API_URL: `http://127.0.0.1:${artistAddress.port}/listenbrainz` },
 })
 
 try {
@@ -79,7 +90,10 @@ try {
     const response = await fetch(mediaUrl, { headers: { Range: 'bytes=0-43' } })
     return { status: response.status, range: response.headers.get('content-range'), length: (await response.arrayBuffer()).byteLength }
   }, url)
-  await page.waitForTimeout(1200)
+  await page.waitForFunction(() => {
+    const audio = document.querySelector('audio')
+    return audio && audio.currentTime > 0.25
+  }, null, { timeout: 5000 })
   const audioState = await page.locator('audio').evaluate((audio) => ({
     currentSrc: audio.currentSrc,
     currentTime: audio.currentTime,
@@ -143,6 +157,9 @@ try {
 
   await page.locator('.track-artist').click()
   await page.getByRole('heading', { name: 'Coldplay' }).waitFor()
+  await page.getByRole('button', { name: 'Instagram' }).waitFor({ timeout: 10000 })
+  await page.getByText('A test biography.').waitFor()
+  if (await page.getByText('Cloud Only Song').count()) throw new Error('Artist popularity rendered a song that is not in the local library')
   await page.getByRole('button', { name: 'Go back' }).click()
   await page.getByRole('heading', { name: 'Songs' }).waitFor()
 
@@ -250,5 +267,6 @@ try {
 } finally {
   await app.close()
   lyricsServer.close()
+  artistServer.close()
   await fs.rm(root, { recursive: true, force: true })
 }
