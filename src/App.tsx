@@ -1,11 +1,11 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Album, ArrowLeft, AudioLines, ChevronDown, Disc3, FolderPlus, Heart, Home, Library as LibraryIcon,
+  Album, ArrowLeft, AudioLines, ChevronDown, Disc3, Download, FolderPlus, Heart, Home, Library as LibraryIcon,
   ChevronRight, GripVertical, ListMusic, Maximize2, Mic2, MoreHorizontal, Music2, Pause, Play, Plus, RefreshCw,
   Repeat, Repeat1, Search, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Sparkles,
   Settings as SettingsIcon, ThumbsDown, ThumbsUp, Trash2, UserRound, Volume1, Volume2, VolumeX, WandSparkles, X,
 } from 'lucide-react'
-import type { ArtistImages, Library, LyricLine, Playlist, ScanProgress, Settings, Track } from './types'
+import type { ArtistImages, Library, LyricLine, Playlist, ScanProgress, Settings, Track, UpdateInfo } from './types'
 import './App.css'
 import logoUrl from './assets/logo.png'
 
@@ -257,6 +257,9 @@ function App() {
   const [mobilePlayer, setMobilePlayer] = useState(false)
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null)
   const [playbackError, setPlaybackError] = useState('')
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
+  const [checkingForUpdates, setCheckingForUpdates] = useState(false)
+  const [updateDismissed, setUpdateDismissed] = useState(false)
   const [openRowMenu, setOpenRowMenu] = useState('')
   const [rowWindow, setRowWindow] = useState({ key: '', count: rowBatchSize })
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -296,6 +299,17 @@ function App() {
   }, [])
 
   useEffect(() => window.polaris?.onLibraryUpdated((value) => { setLibrary(value); setScan(null) }), [])
+
+  useEffect(() => {
+    window.polaris?.checkForUpdates().then((info) => setUpdateInfo(info))
+  }, [])
+
+  const runUpdateCheck = async () => {
+    setCheckingForUpdates(true)
+    const info = await window.polaris?.checkForUpdates()
+    if (info) { setUpdateInfo(info); if (info.available) setUpdateDismissed(false) }
+    setCheckingForUpdates(false)
+  }
 
   useEffect(() => {
     settingsRef.current = library.settings
@@ -765,8 +779,9 @@ function App() {
         </nav>
         <div className="source-card"><LibraryIcon /><span><strong>{library.folder ? 'Music folder' : 'No source added'}</strong><small>{library.folder || 'Choose your NAS folder'}</small></span><IconButton label={library.folder ? 'Rescan library' : 'Add folder'} onClick={rescan}>{library.folder ? <RefreshCw /> : <Plus />}</IconButton></div>
       </aside>
-      <main className="content">{view === 'playlist' && selectedPlaylist && (renamingPlaylist ? <div className="playlist-rename-editor"><input aria-label="Playlist name" autoFocus value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') savePlaylistName(); if (event.key === 'Escape') setRenamingPlaylist(false) }} /><button className="secondary-button" onClick={savePlaylistName}>Save playlist name</button><IconButton label="Cancel rename" onClick={() => setRenamingPlaylist(false)}><X /></IconButton></div> : <button className="playlist-rename-button secondary-button" onClick={renameSelectedPlaylist}>Rename playlist</button>)}{content()}{view === 'settings' && <section className="accent-settings"><div className="settings-group"><h2>Theme</h2><p>Choose the accent used for active controls and highlights.</p><fieldset className="accent-picker"><legend>Accent color</legend><div>{accentPresets.map((preset) => <button key={preset.color} className={library.settings.accentColor === preset.color ? 'active' : ''} style={{ '--swatch': preset.color } as React.CSSProperties} aria-label={preset.name} title={preset.name} onClick={() => updateSettings({ accentColor: preset.color })}><span /></button>)}</div></fieldset></div></section>}</main>
+      <main className="content">{view === 'playlist' && selectedPlaylist && (renamingPlaylist ? <div className="playlist-rename-editor"><input aria-label="Playlist name" autoFocus value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') savePlaylistName(); if (event.key === 'Escape') setRenamingPlaylist(false) }} /><button className="secondary-button" onClick={savePlaylistName}>Save playlist name</button><IconButton label="Cancel rename" onClick={() => setRenamingPlaylist(false)}><X /></IconButton></div> : <button className="playlist-rename-button secondary-button" onClick={renameSelectedPlaylist}>Rename playlist</button>)}{content()}{view === 'settings' && <section className="accent-settings"><div className="settings-group"><h2>Theme</h2><p>Choose the accent used for active controls and highlights.</p><fieldset className="accent-picker"><legend>Accent color</legend><div>{accentPresets.map((preset) => <button key={preset.color} className={library.settings.accentColor === preset.color ? 'active' : ''} style={{ '--swatch': preset.color } as React.CSSProperties} aria-label={preset.name} title={preset.name} onClick={() => updateSettings({ accentColor: preset.color })}><span /></button>)}</div></fieldset></div><div className="settings-group update-settings"><h2>Updates</h2><p>{updateInfo?.available ? `Polaris ${updateInfo.latestVersion} is ready to download.` : updateInfo?.error ? 'Could not reach GitHub. Check your connection and try again.' : updateInfo ? `Polaris ${updateInfo.currentVersion} is up to date.` : 'Checking GitHub Releases.'}</p><div>{updateInfo?.available && <button className="primary-button" onClick={() => window.polaris?.openExternal(updateInfo.downloadUrl)}><Download />Get version {updateInfo.latestVersion}</button>}<button className="secondary-button" disabled={checkingForUpdates} onClick={runUpdateCheck}><RefreshCw className={checkingForUpdates ? 'spin' : ''} />{checkingForUpdates ? 'Checking' : 'Check for updates'}</button></div><small>Current version {updateInfo?.currentVersion || '1.0.1'}</small></div></section>}</main>
       {playbackError && <div className="playback-error"><AudioLines /><span><strong>Could not play this song</strong><small>{playbackError}</small></span><IconButton label="Dismiss" onClick={() => setPlaybackError('')}><X /></IconButton></div>}
+      {updateInfo?.available && !updateDismissed && <div className="update-toast"><Download /><span><strong>Polaris {updateInfo.latestVersion} is available</strong><small>Download the latest portable release from GitHub.</small></span><button className="primary-button" onClick={() => window.polaris?.openExternal(updateInfo.downloadUrl)}>Get update</button><IconButton label="Dismiss update" onClick={() => setUpdateDismissed(true)}><X /></IconButton></div>}
       {scan && <div className="scan-toast"><RefreshCw className="spin" /><span><strong>Reading your library</strong><small>{scan.total ? `${scan.current.toLocaleString()} of ${scan.total.toLocaleString()} tracks` : 'Finding music files…'}</small></span>{scan.total > 0 && <progress value={scan.current} max={scan.total} />}</div>}
       {(lyricsOpen || queueOpen) && !(mobilePlayer && lyricsOpen) && <aside className="right-panel"><div className="panel-header"><div className="segmented"><button className={lyricsOpen ? 'active' : ''} disabled={lyricsUnavailable} onClick={() => { setLyricsOpen(true); setQueueOpen(false) }}>Lyrics</button><button className={queueOpen ? 'active' : ''} onClick={() => { setQueueOpen(true); setLyricsOpen(false) }}>Queue</button></div><IconButton label="Close panel" onClick={() => { setLyricsOpen(false); setQueueOpen(false) }}><X /></IconButton></div>{lyricsOpen ? <LyricsDisplay contrast={library.settings.lyricsContrast} lines={displayLyrics} loading={lyricsLoading} activeLine={activeLyric} onSeek={seekTo} /> : <div className="queue"><p>Up next</p>{queue.slice(queueIndex + 1).map((track, index) => <div className="queue-item" key={`${track.id}-${index}`}><button className="queue-play" onClick={() => { setQueueIndex(queueIndex + index + 1); setPlaying(true) }}><Artwork track={track} size="small" /></button><span><button onClick={() => { setQueueIndex(queueIndex + index + 1); setPlaying(true) }}><strong>{track.title}</strong></button><button onClick={() => openArtist(track)}><small>{track.artist}</small></button><button onClick={() => openAlbum(track)}><small>{track.album}</small></button></span><small>{formatTime(track.duration)}</small></div>)}</div>}</aside>}
       <div className={`now-playing ${mobilePlayer ? 'expanded' : ''}`} style={{ '--player-art': library.settings.dynamicBackground && current?.artwork ? `url("${current.artwork}")` : 'none' } as React.CSSProperties}>

@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('polaris', {
   getLyrics: (lyricPath, embedded, trackPath, track) => ipcRenderer.invoke('lyrics:get', lyricPath, embedded, trackPath, track),
   getArtistImage: (artist) => ipcRenderer.invoke('artist:image', artist),
   openExternal: (url) => ipcRenderer.invoke('external:open', url),
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   onScanProgress: (callback) => {
     const handler = (_event, progress) => callback(progress)
     ipcRenderer.on('library:progress', handler)

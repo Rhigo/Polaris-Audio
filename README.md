@@ -4,7 +4,7 @@
 
 Polaris plays your own collection directly from disk. It combines a responsive library, immersive playback, synchronized lyrics, rich artist pages, playlists, and a preference-aware Supermix without uploading your audio.
 
-[Download Polaris for Windows](https://github.com/Rhigo/Polaris-Audio/releases/latest/download/Polaris-1.0.1-Portable.exe)
+[Download Polaris for Windows](https://github.com/Rhigo/Polaris-Audio/releases/latest/download/Polaris-1.0.2-Portable.exe)
 
 No installer is required. Download the portable `.exe`, open it, and choose your music folder.
 
@@ -56,10 +56,12 @@ Online results and misses are cached. MusicBrainz requests are serialized and ra
 
 ## Getting Started
 
-1. Download or build `Polaris-1.0.1-Portable.exe`.
+1. Download or build `Polaris-1.0.2-Portable.exe`.
 2. Open Polaris and select **Add music folder**.
 3. Choose a local folder, mapped network drive, or UNC share.
 4. Leave Polaris open for the initial metadata scan. Later refreshes process only changed files.
+
+Polaris checks the repository's latest GitHub Release when it starts and on demand from Settings. When an update is available, it opens the verified portable executable download; it does not modify the currently running file.
 
 For the best browsing experience, keep artist, album, genre, year, disc, and track tags populated. Place synchronized lyrics beside a song using the same filename and an `.lrc` extension.
 
@@ -89,7 +91,7 @@ Build the portable Windows application:
 npm run dist
 ```
 
-The configured builder writes `Polaris-1.0.1-Portable.exe` to the local release output directory.
+The configured builder writes `Polaris-1.0.2-Portable.exe` to the local release output directory.
 
 ## Stack
 

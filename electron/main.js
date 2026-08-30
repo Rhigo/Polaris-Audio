@@ -67,6 +67,42 @@ const externalUrl = (value) => {
 const normalizedArtistName = (value = '') => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim()
 const exactArtistMatch = (candidate, requested) => normalizedArtistName(candidate) === normalizedArtistName(requested)
 const wikipediaArtistMatch = (candidate, requested) => exactArtistMatch(candidate?.replace(/\s*\((?:band|musician|rapper|singer|group|artist|dj)\)\s*$/i, ''), requested)
+const releasesUrl = 'https://github.com/Rhigo/Polaris-Audio/releases'
+
+function versionParts(value = '') {
+  const match = String(value).trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)/)
+  return match ? match.slice(1).map(Number) : null
+}
+
+function isNewerVersion(candidate, current) {
+  const candidateParts = versionParts(candidate)
+  const currentParts = versionParts(current)
+  if (!candidateParts || !currentParts) return false
+  for (let index = 0; index < 3; index += 1) {
+    if (candidateParts[index] !== currentParts[index]) return candidateParts[index] > currentParts[index]
+  }
+  return false
+}
+
+async function checkForUpdates() {
+  const currentVersion = app.getVersion()
+  try {
+    const apiUrl = process.env.POLARIS_UPDATE_API_URL || 'https://api.github.com/repos/Rhigo/Polaris-Audio/releases/latest'
+    const response = await net.fetch(apiUrl, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': `Polaris/${currentVersion}` },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!response.ok) throw new Error(`GitHub returned ${response.status}`)
+    const release = await response.json()
+    const latestVersion = String(release.tag_name || '').replace(/^v/i, '')
+    const asset = Array.isArray(release.assets) ? release.assets.find((item) => /Polaris-.*-Portable\.exe$/i.test(item?.name || '')) : null
+    const releaseUrl = /^https:\/\/github\.com\/Rhigo\/Polaris-Audio\/releases\//i.test(release.html_url || '') ? release.html_url : releasesUrl
+    const downloadUrl = /^https:\/\/github\.com\/Rhigo\/Polaris-Audio\/releases\/download\//i.test(asset?.browser_download_url || '') ? asset.browser_download_url : releaseUrl
+    return { currentVersion, latestVersion, available: isNewerVersion(latestVersion, currentVersion), releaseUrl, downloadUrl, checkedAt: Date.now() }
+  } catch (error) {
+    return { currentVersion, latestVersion: '', available: false, releaseUrl: releasesUrl, downloadUrl: releasesUrl, checkedAt: Date.now(), error: error instanceof Error ? error.message : 'Update check failed' }
+  }
+}
 
 if (process.env.POLARIS_USER_DATA) app.setPath('userData', process.env.POLARIS_USER_DATA)
 
@@ -533,6 +569,7 @@ app.whenReady().then(async () => {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return false
     return shell.openExternal(url).then(() => true, () => false)
   })
+  ipcMain.handle('updates:check', checkForUpdates)
   ipcMain.handle('artist:image', async (_, artist) => {
     if (artistImageRequests.has(artist)) return artistImageRequests.get(artist)
     const request = (async () => {

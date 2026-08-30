@@ -1,7 +1,7 @@
 {
   "name": "polaris-music-player",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A beautiful, private desktop music player for local and NAS libraries.",
   "main": "electron/main.js",
   "type": "module",

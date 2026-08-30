@@ -29,6 +29,7 @@ function createWave(seconds = 3, sampleRate = 44100) {
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'polaris-smoke-'))
 let lyricsRequests = 0
+let updateRequests = 0
 const lyricsServer = createServer((request, response) => {
   lyricsRequests += 1
   if (new URL(request.url, 'http://localhost').searchParams.get('track_name') === 'Rate Limited') {
@@ -45,6 +46,10 @@ const lyricsAddress = lyricsServer.address()
 const artistServer = createServer((request, response) => {
   const url = new URL(request.url, 'http://localhost')
   response.setHeader('Content-Type', 'application/json')
+  if (url.pathname === '/release') {
+    updateRequests += 1
+    return response.end(JSON.stringify({ tag_name: 'v1.0.3', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.3', assets: [{ name: 'Polaris-1.0.3-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.3/Polaris-1.0.3-Portable.exe' }] }))
+  }
   if (url.pathname === '/audiodb') return response.end(JSON.stringify({ artists: [{ strArtist: 'Cold Play Tribute', strBiographyEN: 'Wrong artist.', strMusicBrainzID: 'wrong-mbid' }, { strArtist: 'Coldplay', strBiographyEN: 'A test biography.', strGenre: 'Alternative', strMusicBrainzID: 'test-mbid', strWebsite: 'coldplay.com' }] }))
   if (url.pathname.includes('/artist/test-mbid')) return response.end(JSON.stringify({ relations: [{ url: { resource: 'https://instagram.com/coldplay' } }] }))
   if (url.pathname.includes('/top-recordings-for-artist/')) return response.end(JSON.stringify({ recordings: [{ recording_name: 'Polaris Test Tone', listen_count: 500, listener_count: 300 }, { recording_name: 'Cloud Only Song', listen_count: 900, listener_count: 700 }] }))
@@ -90,12 +95,14 @@ await fs.writeFile(path.join(profile, 'library.json'), JSON.stringify({
 
 const app = await electron.launch({
   args: ['.'],
-  env: { ...process.env, POLARIS_USER_DATA: profile, VITE_DEV_SERVER_URL: 'http://127.0.0.1:4174', LRCLIB_API_URL: `http://127.0.0.1:${lyricsAddress.port}/api/get`, AUDIODB_API_URL: `http://127.0.0.1:${artistAddress.port}/audiodb`, MUSICBRAINZ_API_URL: `http://127.0.0.1:${artistAddress.port}/musicbrainz`, LISTENBRAINZ_API_URL: `http://127.0.0.1:${artistAddress.port}/listenbrainz`, WIKIPEDIA_API_URL: `http://127.0.0.1:${artistAddress.port}/wiki`, WIKIPEDIA_SUMMARY_URL: `http://127.0.0.1:${artistAddress.port}/summary` },
+  env: { ...process.env, POLARIS_USER_DATA: profile, VITE_DEV_SERVER_URL: 'http://127.0.0.1:4174', POLARIS_UPDATE_API_URL: `http://127.0.0.1:${artistAddress.port}/release`, LRCLIB_API_URL: `http://127.0.0.1:${lyricsAddress.port}/api/get`, AUDIODB_API_URL: `http://127.0.0.1:${artistAddress.port}/audiodb`, MUSICBRAINZ_API_URL: `http://127.0.0.1:${artistAddress.port}/musicbrainz`, LISTENBRAINZ_API_URL: `http://127.0.0.1:${artistAddress.port}/listenbrainz`, WIKIPEDIA_API_URL: `http://127.0.0.1:${artistAddress.port}/wiki`, WIKIPEDIA_SUMMARY_URL: `http://127.0.0.1:${artistAddress.port}/summary` },
 })
 
 try {
   const page = await app.firstWindow()
   page.on('console', (message) => console.log(`[renderer:${message.type()}] ${message.text()}`))
+  await page.getByText('Polaris 1.0.3 is available').waitFor({ timeout: 5000 })
+  await page.getByRole('button', { name: 'Dismiss update' }).click()
   await page.getByRole('button', { name: 'Songs', exact: true }).click()
   await page.getByRole('button', { name: 'Play Polaris Test Tone' }).click()
   const range = await page.evaluate(async (mediaUrl) => {
@@ -253,6 +260,11 @@ try {
   await page.getByRole('button', { name: 'Regenerate' }).click()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('heading', { name: 'Settings' }).waitFor()
+  await page.getByText('Polaris 1.0.3 is ready to download.').waitFor()
+  await page.getByRole('button', { name: 'Check for updates' }).click()
+  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.3 is ready to download.'))
+  if (updateRequests < 2) throw new Error(`Manual update check did not reach the release endpoint: ${updateRequests}`)
+  await page.getByRole('button', { name: 'Get version 1.0.3' }).waitFor()
   const titleLogo = page.locator('.wordmark img')
   await titleLogo.waitFor()
   if (!await titleLogo.evaluate((image) => image.complete && image.naturalWidth > 0)) throw new Error('Application logo did not load')

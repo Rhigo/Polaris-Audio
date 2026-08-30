@@ -65,6 +65,7 @@ export interface ScanProgress { current: number; total: number }
 export interface ArtistLink { label: string; url: string }
 export interface PopularRecording { title: string; listens: number; listeners: number }
 export interface ArtistImages { profile: string; background: string; biography?: string; genres?: string[]; links?: ArtistLink[]; topRecordings?: PopularRecording[]; requestedArtist?: string; resolvedArtist?: string; cachedAt?: number }
+export interface UpdateInfo { currentVersion: string; latestVersion: string; available: boolean; releaseUrl: string; downloadUrl: string; checkedAt: number; error?: string }
 
 declare global {
   interface Window {
@@ -76,6 +77,7 @@ declare global {
       getLyrics: (lyricPath: string, embedded?: string, trackPath?: string, track?: Pick<Track, 'title' | 'artist' | 'album' | 'duration'>) => Promise<LyricLine[]>
       getArtistImage: (artist: string) => Promise<ArtistImages>
       openExternal: (url: string) => Promise<boolean>
+      checkForUpdates: () => Promise<UpdateInfo>
       onScanProgress: (callback: (progress: ScanProgress) => void) => () => void
       onLibraryUpdated: (callback: (library: Library) => void) => () => void
     }
