@@ -59,7 +59,7 @@ Online results and misses are cached. MusicBrainz requests are serialized and ra
 
 ## Getting Started
 
-1. Download or build `Polaris-1.0.5-Portable.exe`.
+1. Download or build `Polaris-1.0.6-Setup.exe`. Use the portable build only when you do not need Start Menu or taskbar integration.
 2. Open Polaris and select **Add music source**.
 3. Choose a local folder, mapped network drive, or UNC share. Add more sources from Settings at any time.
 4. Leave Polaris open for the initial metadata scan. Later refreshes process only changed files.
@@ -70,7 +70,7 @@ For the best browsing experience, keep artist, album, genre, year, disc, and tra
 
 ## Removing Polaris
 
-Close Polaris and delete the portable executable. To also remove its library index, settings, artwork, and online metadata caches, delete `%APPDATA%\Polaris`.
+Uninstall Polaris from Windows Settings, or close Polaris and delete the portable executable. To also remove its library index, settings, artwork, and online metadata caches, delete `%APPDATA%\Polaris`.
 
 ## Development
 
@@ -98,7 +98,7 @@ Build the portable Windows application:
 npm run dist
 ```
 
-The configured builder writes `Polaris-1.0.5-Portable.exe` to the local release output directory.
+The configured builder writes `Polaris-1.0.6-Setup.exe` and `Polaris-1.0.6-Portable.exe` to the local release output directory. Install the setup build before pinning Polaris to the taskbar; the portable launcher runs from a temporary extraction directory that Windows cannot keep as a stable pinned shortcut.
 
 ### Windows code signing
 

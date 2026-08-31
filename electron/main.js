@@ -58,9 +58,13 @@ const socialLabel = (url) => {
 }
 
 const externalUrl = (value) => {
-  if (!value) return ''
-  if (value.startsWith('//')) return `https:${value}`
-  return /^https?:\/\//i.test(value) ? value : `https://${value}`
+  if (typeof value !== 'string' || !value.trim() || /^(?:0|null|none|n\/a|-)$/i.test(value.trim())) return ''
+  try {
+    const url = new URL(value.startsWith('//') ? `https:${value}` : /^https?:\/\//i.test(value) ? value : `https://${value}`)
+    const host = url.hostname.toLowerCase()
+    const privateHost = host === '0' || host === 'localhost' || host.endsWith('.localhost') || host === '::1' || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(?:1[6-9]|2\d|3[01])\./.test(host)
+    return privateHost || !['http:', 'https:'].includes(url.protocol) ? '' : url.href
+  } catch { return '' }
 }
 
 const normalizedArtistName = (value = '') => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim()
@@ -68,7 +72,7 @@ const exactArtistMatch = (candidate, requested) => normalizedArtistName(candidat
 const catalogArtistMatch = (candidate = '', requested = '') => candidate.split(/\s*(?:&|,|feat(?:uring)?|ft\.)\s*/i).some((name) => exactArtistMatch(name, requested))
 const wikipediaArtistMatch = (candidate, requested) => exactArtistMatch(candidate?.replace(/\s*\((?:band|musician|rapper|singer|group|artist|dj)\)\s*$/i, ''), requested)
 const releasesUrl = 'https://github.com/Rhigo/Polaris-Audio/releases'
-const artistRankingVersion = 3
+const artistRankingVersion = 4
 
 function versionParts(value = '') {
   const match = String(value).trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)/)
@@ -96,7 +100,8 @@ async function checkForUpdates() {
     if (!response.ok) throw new Error(`GitHub returned ${response.status}`)
     const release = await response.json()
     const latestVersion = String(release.tag_name || '').replace(/^v/i, '')
-    const asset = Array.isArray(release.assets) ? release.assets.find((item) => /Polaris-.*-Portable\.exe$/i.test(item?.name || '')) : null
+    const assets = Array.isArray(release.assets) ? release.assets : []
+    const asset = assets.find((item) => /Polaris-.*-Setup\.exe$/i.test(item?.name || '')) || assets.find((item) => /Polaris-.*-Portable\.exe$/i.test(item?.name || ''))
     const releaseUrl = /^https:\/\/github\.com\/Rhigo\/Polaris-Audio\/releases\//i.test(release.html_url || '') ? release.html_url : releasesUrl
     const downloadUrl = /^https:\/\/github\.com\/Rhigo\/Polaris-Audio\/releases\/download\//i.test(asset?.browser_download_url || '') ? asset.browser_download_url : releaseUrl
     return { currentVersion, latestVersion, available: isNewerVersion(latestVersion, currentVersion), releaseUrl, downloadUrl, checkedAt: Date.now() }
@@ -106,6 +111,17 @@ async function checkForUpdates() {
 }
 
 if (process.env.POLARIS_USER_DATA) app.setPath('userData', process.env.POLARIS_USER_DATA)
+if (process.platform === 'win32' && !process.env.POLARIS_USER_DATA) app.setAppUserModelId('com.polaris.music')
+
+if (!process.env.POLARIS_USER_DATA) {
+  if (!app.requestSingleInstanceLock()) app.exit(0)
+  app.on('second-instance', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  })
+}
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'polaris', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -626,7 +642,7 @@ app.whenReady().then(async () => {
       if (mbid) {
         const relationResponse = await musicBrainzFetch(`${process.env.MUSICBRAINZ_API_URL || 'https://musicbrainz.org/ws/2'}/artist/${encodeURIComponent(mbid)}?inc=url-rels&fmt=json`)
         const relationData = relationResponse.ok ? await relationResponse.json() : {}
-        const relationLinks = (relationData.relations || []).map((relation) => relation.url?.resource).filter((url) => /^https?:\/\//i.test(url)).map((url) => ({ label: socialLabel(url), url }))
+        const relationLinks = (relationData.relations || []).map((relation) => externalUrl(relation.url?.resource)).filter(Boolean).map((url) => ({ label: socialLabel(url), url }))
         links = [...new Map([...links, ...relationLinks].map((link) => [link.url, link])).values()].slice(0, 8)
       }
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.6 - 2026-08-31
+
+- Fixed playlist drag-and-drop ordering and persisted rapid playlist changes against the latest state.
+- Added automatic progress-based scrolling for lyrics that do not include synchronized timestamps.
+- Added a standard Windows installer with stable Start Menu and taskbar shortcuts, consistent app identity, and single-instance focusing.
+- Removed invalid placeholder artist links that could resolve to the local computer.
+- Preferred the installed build when downloading future updates while retaining the portable option.
+
 ## 1.0.5 - 2026-08-30
 
 - Ranked artist-page songs using explicit global popularity data, with public fallbacks that do not require personal credentials.

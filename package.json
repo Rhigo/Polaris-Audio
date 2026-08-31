@@ -1,7 +1,7 @@
 {
   "name": "polaris-music-player",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.6",
   "author": "Rhigo",
   "license": "MIT",
   "description": "A beautiful, private desktop music player for local and NAS libraries.",
@@ -22,7 +22,7 @@
     "build": "tsc -b && vite build",
     "test:smoke": "node tests/electron-smoke.mjs",
     "test:performance": "node tests/performance-smoke.mjs",
-    "dist": "npm run build && electron-builder --win portable",
+    "dist": "npm run build && electron-builder --win portable nsis",
     "lint": "oxlint src electron vite.config.ts",
     "preview": "vite preview"
   },
@@ -41,11 +41,22 @@
       "package.json"
     ],
     "win": {
-      "target": "portable",
+      "target": [
+        "portable",
+        "nsis"
+      ],
       "icon": "build-resources/icon.ico"
     },
     "portable": {
       "artifactName": "Polaris-${version}-Portable.${ext}"
+    },
+    "nsis": {
+      "artifactName": "Polaris-${version}-Setup.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Polaris"
     }
   },
   "dependencies": {
