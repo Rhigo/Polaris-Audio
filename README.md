@@ -6,7 +6,18 @@ Polaris plays your own collection directly from disk. It combines a responsive l
 
 [Download the latest Polaris release for Windows](https://github.com/Rhigo/Polaris-Audio/releases/latest)
 
-No installer is required. Download the portable `.exe`, open it, and choose your music folder.
+For normal Windows use, download `Polaris-1.0.6-Setup.exe`. The portable build remains available for removable or no-install use, but should not be pinned to the taskbar because it runs from a temporary extraction directory.
+
+## What's New in 1.0.6
+
+- Playlist drag-and-drop ordering now works in both directions and persists reliably.
+- Lyrics without timestamps automatically scroll with playback progress.
+- The new Windows installer provides stable Start Menu and taskbar shortcuts.
+- Launching Polaris again focuses the existing app instead of opening a duplicate instance.
+- Invalid artist links, including placeholder values such as `0`, are no longer shown or opened.
+- Update downloads prefer the installed build while keeping the portable edition available.
+
+Both Windows executables are currently unsigned, so Windows SmartScreen may display an **Unknown publisher** warning.
 
 ![Polaris artist view](docs/screenshots/artist.png)
 
@@ -64,7 +75,7 @@ Online results and misses are cached. MusicBrainz requests are serialized and ra
 3. Choose a local folder, mapped network drive, or UNC share. Add more sources from Settings at any time.
 4. Leave Polaris open for the initial metadata scan. Later refreshes process only changed files.
 
-Polaris checks the repository's latest GitHub Release when it starts and on demand from Settings. When an update is available, it opens the verified portable executable download; it does not modify the currently running file.
+Polaris checks the repository's latest GitHub Release when it starts and on demand from Settings. When an update is available, it opens the release download for the setup build when available, falling back to the portable executable. It does not modify the currently running application.
 
 For the best browsing experience, keep artist, album, genre, year, disc, and track tags populated. Place synchronized lyrics beside a song using the same filename and an `.lrc` extension.
 
