@@ -281,6 +281,8 @@ h1 { margin: 5px 0 9px; color: var(--text); font-size: clamp(34px, 4vw, 58px); l
 .lyrics .lyrics-back { align-self: flex-start; display: flex; align-items: center; gap: 8px; padding: 8px 11px; color: #d7d4d5; border-radius: 5px; background: rgba(0,0,0,.28); font: 600 11px 'DM Sans'; }
 .lyrics .lyrics-back svg { width: 15px; height: 15px; }
 .lyrics-static { padding-top: 28px; }
+.lyrics-auto-scroll { position: sticky; z-index: 2; top: 0; align-self: flex-end; display: flex; align-items: center; gap: 8px; padding: 7px 9px; color: #d7d4d5; border: 1px solid var(--line); border-radius: 5px; background: rgba(18,18,20,.94); font: 600 10px 'DM Sans'; }
+.lyrics-auto-scroll input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .lyrics-static .lyric-line { color: #d2cfd0; font: 600 16px/1.4 'Manrope'; }
 .lyrics-empty { align-items: center; justify-content: center; gap: 8px; padding: 20px; color: var(--muted); text-align: center; }
 .lyrics-empty svg { width: 34px; height: 34px; margin-bottom: 10px; }

@@ -6,16 +6,14 @@ Polaris plays your own collection directly from disk. It combines a responsive l
 
 [Download the latest Polaris release for Windows](https://github.com/Rhigo/Polaris-Audio/releases/latest)
 
-For normal Windows use, download `Polaris-1.0.6-Setup.exe`. The portable build remains available for removable or no-install use, but should not be pinned to the taskbar because it runs from a temporary extraction directory.
+For normal Windows use, download `Polaris-1.0.7-Setup.exe`. The portable build remains available for removable or no-install use, but should not be pinned to the taskbar because it runs from a temporary extraction directory.
 
-## What's New in 1.0.6
+## What's New in 1.0.7
 
-- Playlist drag-and-drop ordering now works in both directions and persists reliably.
-- Lyrics without timestamps automatically scroll with playback progress.
-- The new Windows installer provides stable Start Menu and taskbar shortcuts.
-- Launching Polaris again focuses the existing app instead of opening a duplicate instance.
-- Invalid artist links, including placeholder values such as `0`, are no longer shown or opened.
-- Update downloads prefer the installed build while keeping the portable edition available.
+- Lyrics without timestamps now include an **Auto-scroll** toggle.
+- Auto-scroll remains enabled by default and follows playback progress when active.
+- Turning it off is remembered, allowing manual lyric scrolling for songs with long intros.
+- Installed update prompts continue to prefer the setup build while keeping the portable edition available.
 
 Both Windows executables are currently unsigned, so Windows SmartScreen may display an **Unknown publisher** warning.
 
@@ -70,7 +68,7 @@ Online results and misses are cached. MusicBrainz requests are serialized and ra
 
 ## Getting Started
 
-1. Download or build `Polaris-1.0.6-Setup.exe`. Use the portable build only when you do not need Start Menu or taskbar integration.
+1. Download or build `Polaris-1.0.7-Setup.exe`. Use the portable build only when you do not need Start Menu or taskbar integration.
 2. Open Polaris and select **Add music source**.
 3. Choose a local folder, mapped network drive, or UNC share. Add more sources from Settings at any time.
 4. Leave Polaris open for the initial metadata scan. Later refreshes process only changed files.
@@ -109,7 +107,7 @@ Build the portable Windows application:
 npm run dist
 ```
 
-The configured builder writes `Polaris-1.0.6-Setup.exe` and `Polaris-1.0.6-Portable.exe` to the local release output directory. Install the setup build before pinning Polaris to the taskbar; the portable launcher runs from a temporary extraction directory that Windows cannot keep as a stable pinned shortcut.
+The configured builder writes `Polaris-1.0.7-Setup.exe` and `Polaris-1.0.7-Portable.exe` to the local release output directory. Install the setup build before pinning Polaris to the taskbar; the portable launcher runs from a temporary extraction directory that Windows cannot keep as a stable pinned shortcut.
 
 ### Windows code signing
 

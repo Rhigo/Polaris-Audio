@@ -35,6 +35,7 @@ export type AccentColor = '#6832c2' | '#f0504d' | '#e04787' | '#197f8c' | '#2f73
 
 export interface Settings {
   onlineLyrics: boolean
+  staticLyricsAutoScroll: boolean
   lyricsContrast: 'normal' | 'high' | 'maximum'
   visualizerStyle: VisualizerStyle
   visualizerIntensity: number

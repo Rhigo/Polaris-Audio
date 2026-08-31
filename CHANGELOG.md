@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.7 - 2026-08-31
+
+- Added a persistent auto-scroll toggle directly above lyrics without timestamps.
+- Kept static lyric auto-scroll enabled by default while allowing manual scrolling for songs with long intros.
+- Clarified in-app update messaging for installed Windows releases.
+
 ## 1.0.6 - 2026-08-31
 
 - Fixed playlist drag-and-drop ordering and persisted rapid playlist changes against the latest state.

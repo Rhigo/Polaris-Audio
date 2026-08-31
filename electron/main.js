@@ -133,7 +133,7 @@ const lyricsCachePath = () => path.join(app.getPath('userData'), 'online-lyrics.
 const artworkPath = () => path.join(app.getPath('userData'), 'artwork')
 const mediaUrl = (filePath) => `polaris://media/${Buffer.from(filePath).toString('base64url')}`
 const defaultSettings = {
-  onlineLyrics: true, lyricsContrast: 'high', visualizerStyle: 'spectrum', visualizerIntensity: 0.55,
+  onlineLyrics: true, staticLyricsAutoScroll: true, lyricsContrast: 'high', visualizerStyle: 'spectrum', visualizerIntensity: 0.55,
   visualizerOpacity: 0.24, visualizerColor: '#f6f3ed', reduceMotion: false, volume: 0.82, shuffle: false, repeat: 'off',
   libraryExpanded: true, dynamicBackground: true, accentColor: '#6832c2',
 }
