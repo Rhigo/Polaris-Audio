@@ -50,6 +50,7 @@ let lyricsRequests = 0
 let updateRequests = 0
 let jellyfinItemRequests = 0
 let jellyfinAuthorizedRequests = 0
+let jellyfinTransientFailure = true
 const jellyfinAudio = createWave(2)
 const jellyfinArtwork = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
 const lyricsServer = createServer((request, response) => {
@@ -86,6 +87,11 @@ const artistServer = createServer(async (request, response) => {
     jellyfinItemRequests += 1
     if (request.headers.authorization?.includes('Token="raw-test-token"')) jellyfinAuthorizedRequests += 1
     else { response.statusCode = 401; return response.end('{}') }
+    if (jellyfinTransientFailure) {
+      jellyfinTransientFailure = false
+      response.statusCode = 503
+      return response.end('{}')
+    }
     await new Promise((resolve) => setTimeout(resolve, 150))
     response.setHeader('Content-Type', 'application/json')
     return response.end(JSON.stringify({ TotalRecordCount: 1, Items: [{
@@ -124,7 +130,7 @@ const artistServer = createServer(async (request, response) => {
   response.setHeader('Content-Type', 'application/json')
   if (url.pathname === '/release') {
     updateRequests += 1
-    return response.end(JSON.stringify({ tag_name: 'v1.0.12', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.12', assets: [{ name: 'Polaris-1.0.12-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.12/Polaris-1.0.12-Portable.exe' }, { name: 'Polaris-1.0.12-Setup.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.12/Polaris-1.0.12-Setup.exe' }] }))
+    return response.end(JSON.stringify({ tag_name: 'v1.0.13', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.13', assets: [{ name: 'Polaris-1.0.13-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.13/Polaris-1.0.13-Portable.exe' }, { name: 'Polaris-1.0.13-Setup.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.13/Polaris-1.0.13-Setup.exe' }] }))
   }
   if (url.pathname === '/audiodb') return response.end(JSON.stringify({ artists: [{ strArtist: 'Cold Play Tribute', strBiographyEN: 'Wrong artist.', strMusicBrainzID: 'wrong-mbid' }, { strArtist: 'Coldplay', strBiographyEN: 'A test biography.', strGenre: 'Alternative', strMusicBrainzID: 'test-mbid', strWebsite: 'coldplay.com', strTwitter: '0' }] }))
   if (url.pathname.includes('/artist/test-mbid')) return response.end(JSON.stringify({ relations: [{ url: { resource: 'https://instagram.com/coldplay' } }] }))
@@ -182,7 +188,7 @@ const app = await electron.launch({
 try {
   const page = await app.firstWindow()
   page.on('console', (message) => console.log(`[renderer:${message.type()}] ${message.text()}`))
-  await page.getByText('Polaris 1.0.12 is available').waitFor({ timeout: 5000 })
+  await page.getByText('Polaris 1.0.13 is available').waitFor({ timeout: 5000 })
   await page.getByRole('button', { name: 'Dismiss update' }).click()
   await page.getByRole('button', { name: 'Songs', exact: true }).click()
   await page.getByRole('button', { name: 'Play Polaris Test Tone' }).click()
@@ -408,7 +414,7 @@ try {
   if (credentialFile.includes('test-password') || credentialFile.includes('raw-test-token')) throw new Error('Jellyfin credentials were stored without encryption')
   await page.getByRole('button', { name: 'Refresh Work Jellyfin' }).click()
   await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.jellyfinServers[0]?.lastSyncedAt > 0))
-  if (jellyfinItemRequests < 2 || jellyfinAuthorizedRequests < 4) throw new Error(`Jellyfin authenticated requests were incomplete: ${JSON.stringify({ jellyfinItemRequests, jellyfinAuthorizedRequests })}`)
+  if (jellyfinItemRequests < 3 || jellyfinAuthorizedRequests < 5) throw new Error(`Jellyfin authenticated requests or transient retry were incomplete: ${JSON.stringify({ jellyfinItemRequests, jellyfinAuthorizedRequests })}`)
   await page.getByRole('button', { name: 'Disconnect Work Jellyfin' }).click()
   await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.jellyfinServers.length === 0 && !value.tracks.some((track) => track.sourceType === 'jellyfin')))
   await app.evaluate(({ dialog }, folder) => {
@@ -424,13 +430,13 @@ try {
     return track ? (await fetch(track.url, { headers: { Range: 'bytes=0-43' } })).status : 0
   }, secondaryTrackPath)
   if (secondaryMediaStatus !== 206) throw new Error(`Secondary source media was not authorized: ${secondaryMediaStatus}`)
-  await page.getByText('Polaris 1.0.12 is ready to download.').waitFor()
+  await page.getByText('Polaris 1.0.13 is ready to download.').waitFor()
   await page.getByRole('button', { name: 'Check for updates' }).click()
-  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.12 is ready to download.'))
+  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.13 is ready to download.'))
   if (updateRequests < 2) throw new Error(`Manual update check did not reach the release endpoint: ${updateRequests}`)
   const updateInfo = await page.evaluate(() => window.polaris.checkForUpdates())
-  if (!updateInfo.downloadUrl.endsWith('Polaris-1.0.12-Setup.exe')) throw new Error(`Updater did not prefer the installed build: ${updateInfo.downloadUrl}`)
-  await page.getByRole('button', { name: 'Get version 1.0.12' }).waitFor()
+  if (!updateInfo.downloadUrl.endsWith('Polaris-1.0.13-Setup.exe')) throw new Error(`Updater did not prefer the installed build: ${updateInfo.downloadUrl}`)
+  await page.getByRole('button', { name: 'Get version 1.0.13' }).waitFor()
   const titleLogo = page.locator('.wordmark img')
   await titleLogo.waitFor()
   if (!await titleLogo.evaluate((image) => image.complete && image.naturalWidth > 0)) throw new Error('Application logo did not load')

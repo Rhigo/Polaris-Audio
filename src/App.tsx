@@ -893,7 +893,7 @@ function JellyfinSettings({ library, onLibraryChange }: { library: Library; onLi
 interface SettingsPageProps { library: Library; updateInfo: UpdateInfo | null; checkingForUpdates: boolean; onAddSource: () => void; onRemoveSource: (folder: string) => void; onRescan: () => void; onLibraryChange: (library: Library) => void; onUpdateSettings: (settings: Partial<Settings>) => void; onCheckForUpdates: () => Promise<void> }
 
 function SettingsBase({ library, updateInfo, checkingForUpdates, onAddSource, onRemoveSource, onRescan, onUpdateSettings, onCheckForUpdates }: SettingsPageProps) {
-  const currentVersion = updateInfo?.currentVersion || '1.0.11'
+  const currentVersion = updateInfo?.currentVersion || '1.0.12'
   const updateStatus = updateInfo?.available ? `Polaris ${updateInfo.latestVersion} is ready to download.` : updateInfo?.error ? 'Could not reach GitHub. Check your connection and try again.' : updateInfo ? `Polaris ${currentVersion} is up to date.` : 'Checking GitHub Releases.'
   return (
     <section className="settings-page">
@@ -930,8 +930,8 @@ function SettingsBase({ library, updateInfo, checkingForUpdates, onAddSource, on
         </div>
         <div className="settings-group settings-group--release">
           <div className="release-copy">
-            <div className="settings-group-title"><ScrollText /><span><h2>What's new in 1.0.11</h2><small>Released through GitHub</small></span></div>
-            <ul><li>Jellyfin-hosted local lyrics</li><li>Reliable song and album artwork fallback</li><li>Correct playback for multi-version media items</li></ul>
+            <div className="settings-group-title"><ScrollText /><span><h2>What's new in 1.0.12</h2><small>Released through GitHub</small></span></div>
+            <ul><li>Automatic retry when Jellyfin pauses</li><li>Resilient large-library page loading</li><li>Clearer connection and sign-in errors</li></ul>
           </div>
           <div className="update-settings"><span className={updateInfo?.available ? 'release-status release-status--available' : 'release-status'}>{updateStatus}</span><div>{updateInfo?.available && <button className="primary-button" onClick={() => window.polaris?.openExternal(updateInfo.downloadUrl)}><Download />Get version {updateInfo.latestVersion}</button>}<button className="secondary-button" disabled={checkingForUpdates} onClick={onCheckForUpdates}><RefreshCw className={checkingForUpdates ? 'spin' : ''} />{checkingForUpdates ? 'Checking' : 'Check for updates'}</button></div></div>
         </div>

@@ -249,7 +249,7 @@ async function jellyfinFetch(server, credential, endpoint, options = {}, timeout
   return net.fetch(`${server.url}${endpoint}`, requestOptions)
 }
 
-async function jellyfinJson(server, credential, endpoint, options = {}, timeout = 30000) {
+async function jellyfinJsonRequest(server, credential, endpoint, options, timeout) {
   const controller = new AbortController()
   let timeoutId
   const timeoutPromise = new Promise((_, reject) => {
@@ -267,6 +267,21 @@ async function jellyfinJson(server, credential, endpoint, options = {}, timeout 
   })()
   try { return await Promise.race([request, timeoutPromise]) }
   finally { clearTimeout(timeoutId) }
+}
+
+const retryableJellyfinStatuses = new Set([408, 425, 429, 500, 502, 503, 504])
+
+async function jellyfinJson(server, credential, endpoint, options = {}, timeout = 30000, retries = 0) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const response = await jellyfinJsonRequest(server, credential, endpoint, options, timeout)
+      if (!retryableJellyfinStatuses.has(response.status) || attempt >= retries) return response
+    } catch (error) {
+      if (attempt >= retries) throw error
+    }
+    sendJellyfinProgress(`Jellyfin paused. Retrying (${attempt + 1} of ${retries})...`)
+    await new Promise((resolve) => setTimeout(resolve, Math.min(2000, 300 * (2 ** attempt))))
+  }
 }
 
 const sendJellyfinProgress = (message, current = 0, total = 0) => mainWindow?.webContents.send('jellyfin:progress', { message, current, total })
@@ -312,7 +327,7 @@ async function syncJellyfinServer(serverId) {
       UserId: server.userId, Recursive: 'true', IncludeItemTypes: 'Audio', Fields: 'Genres,DateCreated,MediaSources,MediaStreams,PrimaryImageAspectRatio',
       EnableImages: 'true', ImageTypeLimit: '1', SortBy: 'SortName', SortOrder: 'Ascending', StartIndex: String(startIndex), Limit: String(pageSize),
     })
-    const response = await jellyfinJson(server, credential, `/Items?${query}`)
+    const response = await jellyfinJson(server, credential, `/Items?${query}`, {}, 30000, 2)
     if (!response.ok) throw new Error(response.status === 401 ? 'Your Jellyfin session has expired. Reconnect the server.' : `Jellyfin returned ${response.status} while loading music.`)
     const page = response.data
     const pageItems = Array.isArray(page.Items) ? page.Items : []
@@ -338,13 +353,18 @@ async function connectJellyfin({ url, username, password } = {}) {
   const deviceId = randomUUID()
   const server = { url: serverUrl }
   sendJellyfinProgress('Contacting Jellyfin server...')
-  const publicResponse = await jellyfinJson(server, { deviceId }, '/System/Info/Public')
+  let publicResponse
+  try { publicResponse = await jellyfinJson(server, { deviceId }, '/System/Info/Public', {}, 15000, 2) }
+  catch { throw new Error('Could not reach this Jellyfin server. Check the URL and connection, then try Connect again.') }
   if (!publicResponse.ok) throw new Error(`Could not identify a Jellyfin server at this URL (${publicResponse.status}).`)
   const publicInfo = publicResponse.data
   sendJellyfinProgress('Signing in to Jellyfin...')
-  const authResponse = await jellyfinJson(server, { deviceId }, '/Users/AuthenticateByName', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ Username: String(username || '').trim(), Pw: String(password || '') }),
-  })
+  let authResponse
+  try {
+    authResponse = await jellyfinJson(server, { deviceId }, '/Users/AuthenticateByName', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ Username: String(username || '').trim(), Pw: String(password || '') }),
+    })
+  } catch { throw new Error('Jellyfin did not complete sign-in. Check the server, then try Connect again.') }
   if (!authResponse.ok) throw new Error(authResponse.status === 401 ? 'Jellyfin rejected that username or password.' : `Jellyfin sign-in failed (${authResponse.status}).`)
   const authentication = authResponse.data
   if (!authentication.AccessToken || !authentication.User?.Id) throw new Error('Jellyfin returned an incomplete sign-in response.')

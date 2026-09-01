@@ -14,8 +14,8 @@ The latest release includes two Windows builds:
 
 | Download | Best for |
 | --- | --- |
-| `Polaris-1.0.11-Setup.exe` | Normal use. Installs Polaris and creates stable Start Menu and desktop shortcuts. |
-| `Polaris-1.0.11-Portable.exe` | Running without installation or from removable storage. |
+| `Polaris-1.0.12-Setup.exe` | Normal use. Installs Polaris and creates stable Start Menu and desktop shortcuts. |
+| `Polaris-1.0.12-Portable.exe` | Running without installation or from removable storage. |
 
 Use the setup build if you want to pin Polaris to the taskbar. The portable build extracts to a temporary directory while it runs, so Windows cannot keep a stable pinned shortcut for it.
 
@@ -200,11 +200,11 @@ For reproducible problems, [open a GitHub issue](https://github.com/Rhigo/Polari
 
 Security issues should be reported according to [SECURITY.md](SECURITY.md).
 
-## What's New in 1.0.11
+## What's New in 1.0.12
 
-- Added local lyrics stored in Jellyfin to the player.
-- Fixed song artwork selection and added album artwork fallback.
-- Fixed playback selection for Jellyfin items with multiple media versions.
+- Added automatic retries when Jellyfin briefly pauses or returns a temporary server error.
+- Made large-library sync resilient to intermittent failures on individual pages.
+- Added clearer errors for server identification and sign-in timeouts.
 
 See [CHANGELOG.md](CHANGELOG.md) for the complete release history.
 

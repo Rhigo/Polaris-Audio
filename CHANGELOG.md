@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.12 - 2026-09-01
+
+- Added bounded retries with backoff for transient Jellyfin timeouts and retryable HTTP responses.
+- Kept authentication rejections immediate while making safe server-identification and library-page requests resilient.
+- Added visible retry progress during temporary Jellyfin pauses.
+- Added phase-specific connection and sign-in timeout errors with an actionable Connect retry.
+- Added end-to-end coverage for recovery from a temporary Jellyfin failure during initial sync.
+
 ## 1.0.11 - 2026-09-01
 
 - Added authenticated loading of local lyrics stored with Jellyfin audio items.
