@@ -92,15 +92,28 @@ const artistServer = createServer(async (request, response) => {
       Id: 'remote-track', Name: 'Remote Library Song', Album: 'Remote Album', AlbumId: 'remote-album',
       AlbumArtist: 'Remote Artist', Artists: ['Remote Artist'], Genres: ['Remote'], ProductionYear: 2026,
       IndexNumber: 3, ParentIndexNumber: 1, RunTimeTicks: 20000000, DateCreated: '2026-08-01T00:00:00Z',
-      ImageTags: { Primary: 'image-tag' }, MediaSources: [{ Container: 'flac', Size: 123456, MediaStreams: [{ Type: 'Audio', SampleRate: 48000, BitDepth: 24 }] }],
+      ImageTags: { Primary: 'image-tag' }, MediaSources: [{ Id: 'remote-source', Container: 'flac', Size: 123456, MediaStreams: [{ Type: 'Audio', SampleRate: 48000, BitDepth: 24 }] }],
     }] }))
+  }
+  if (url.pathname === '/Audio/remote-track/Lyrics') {
+    if (request.headers.authorization?.includes('Token="raw-test-token"')) jellyfinAuthorizedRequests += 1
+    else { response.statusCode = 401; return response.end('{}') }
+    response.setHeader('Content-Type', 'application/json')
+    return response.end(JSON.stringify({ Lyrics: [{ Text: 'Remote synced lyric', Start: 10000000 }, { Text: 'Remote plain lyric' }] }))
   }
   if (url.pathname === '/Audio/remote-track/stream') {
     if (request.headers.authorization?.includes('Token="raw-test-token"')) jellyfinAuthorizedRequests += 1
     else { response.statusCode = 401; return response.end() }
+    if (url.searchParams.get('MediaSourceId') !== 'remote-source') { response.statusCode = 400; return response.end() }
     response.setHeader('Content-Type', 'audio/wav')
     response.setHeader('Content-Length', String(jellyfinAudio.length))
     return response.end(jellyfinAudio)
+  }
+  if (url.pathname === '/Items/remote-track/Images/Primary') {
+    if (request.headers.authorization?.includes('Token="raw-test-token"')) jellyfinAuthorizedRequests += 1
+    else { response.statusCode = 401; return response.end() }
+    response.statusCode = 404
+    return response.end()
   }
   if (url.pathname === '/Items/remote-album/Images/Primary') {
     if (request.headers.authorization?.includes('Token="raw-test-token"')) jellyfinAuthorizedRequests += 1
@@ -111,7 +124,7 @@ const artistServer = createServer(async (request, response) => {
   response.setHeader('Content-Type', 'application/json')
   if (url.pathname === '/release') {
     updateRequests += 1
-    return response.end(JSON.stringify({ tag_name: 'v1.0.11', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.11', assets: [{ name: 'Polaris-1.0.11-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.11/Polaris-1.0.11-Portable.exe' }, { name: 'Polaris-1.0.11-Setup.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.11/Polaris-1.0.11-Setup.exe' }] }))
+    return response.end(JSON.stringify({ tag_name: 'v1.0.12', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.12', assets: [{ name: 'Polaris-1.0.12-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.12/Polaris-1.0.12-Portable.exe' }, { name: 'Polaris-1.0.12-Setup.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.12/Polaris-1.0.12-Setup.exe' }] }))
   }
   if (url.pathname === '/audiodb') return response.end(JSON.stringify({ artists: [{ strArtist: 'Cold Play Tribute', strBiographyEN: 'Wrong artist.', strMusicBrainzID: 'wrong-mbid' }, { strArtist: 'Coldplay', strBiographyEN: 'A test biography.', strGenre: 'Alternative', strMusicBrainzID: 'test-mbid', strWebsite: 'coldplay.com', strTwitter: '0' }] }))
   if (url.pathname.includes('/artist/test-mbid')) return response.end(JSON.stringify({ relations: [{ url: { resource: 'https://instagram.com/coldplay' } }] }))
@@ -169,7 +182,7 @@ const app = await electron.launch({
 try {
   const page = await app.firstWindow()
   page.on('console', (message) => console.log(`[renderer:${message.type()}] ${message.text()}`))
-  await page.getByText('Polaris 1.0.11 is available').waitFor({ timeout: 5000 })
+  await page.getByText('Polaris 1.0.12 is available').waitFor({ timeout: 5000 })
   await page.getByRole('button', { name: 'Dismiss update' }).click()
   await page.getByRole('button', { name: 'Songs', exact: true }).click()
   await page.getByRole('button', { name: 'Play Polaris Test Tone' }).click()
@@ -378,6 +391,8 @@ try {
   const jellyfinTrack = jellyfinLibrary.tracks.find((track) => track.sourceType === 'jellyfin')
   if (!jellyfinTrack || jellyfinTrack.title !== 'Remote Library Song' || jellyfinTrack.sampleRate !== 48000 || jellyfinTrack.bitDepth !== 24 || !jellyfinTrack.lossless) throw new Error(`Jellyfin metadata mapping failed: ${JSON.stringify(jellyfinTrack)}`)
   if (jellyfinTrack.url.includes('raw-test-token') || jellyfinTrack.artwork.includes('raw-test-token')) throw new Error('Jellyfin token leaked into a renderer media URL')
+  const jellyfinLyrics = await page.evaluate((track) => window.polaris.getLyrics(track.lyricPath, track.embeddedLyrics, track.path, track), jellyfinTrack)
+  if (jellyfinLyrics[0]?.text !== 'Remote synced lyric' || jellyfinLyrics[0]?.time !== 1 || jellyfinLyrics[1]?.time !== null) throw new Error(`Jellyfin lyrics failed: ${JSON.stringify(jellyfinLyrics)}`)
   const jellyfinResources = await page.evaluate(async (track) => {
     const [audio, artwork] = await Promise.all([fetch(track.url), fetch(track.artwork)])
     return { audioStatus: audio.status, audioBytes: (await audio.arrayBuffer()).byteLength, artworkStatus: artwork.status, artworkType: artwork.headers.get('content-type') }
@@ -409,13 +424,13 @@ try {
     return track ? (await fetch(track.url, { headers: { Range: 'bytes=0-43' } })).status : 0
   }, secondaryTrackPath)
   if (secondaryMediaStatus !== 206) throw new Error(`Secondary source media was not authorized: ${secondaryMediaStatus}`)
-  await page.getByText('Polaris 1.0.11 is ready to download.').waitFor()
+  await page.getByText('Polaris 1.0.12 is ready to download.').waitFor()
   await page.getByRole('button', { name: 'Check for updates' }).click()
-  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.11 is ready to download.'))
+  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.12 is ready to download.'))
   if (updateRequests < 2) throw new Error(`Manual update check did not reach the release endpoint: ${updateRequests}`)
   const updateInfo = await page.evaluate(() => window.polaris.checkForUpdates())
-  if (!updateInfo.downloadUrl.endsWith('Polaris-1.0.11-Setup.exe')) throw new Error(`Updater did not prefer the installed build: ${updateInfo.downloadUrl}`)
-  await page.getByRole('button', { name: 'Get version 1.0.11' }).waitFor()
+  if (!updateInfo.downloadUrl.endsWith('Polaris-1.0.12-Setup.exe')) throw new Error(`Updater did not prefer the installed build: ${updateInfo.downloadUrl}`)
+  await page.getByRole('button', { name: 'Get version 1.0.12' }).waitFor()
   const titleLogo = page.locator('.wordmark img')
   await titleLogo.waitFor()
   if (!await titleLogo.evaluate((image) => image.complete && image.naturalWidth > 0)) throw new Error('Application logo did not load')
