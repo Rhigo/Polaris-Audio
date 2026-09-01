@@ -142,7 +142,7 @@ function Artwork({ track, size = 'medium' }: { track?: Track; size?: 'small' | '
   return (
     <div className={`artwork artwork--${size}`} style={{ '--art-color': color } as React.CSSProperties}>
       <Disc3 aria-hidden="true" />
-      {artwork && <img src={artwork} alt={`${track?.album} cover`} onError={(event) => { event.currentTarget.style.display = 'none' }} />}
+      {artwork && <img src={artwork} alt={`${track?.album} cover`} loading="lazy" decoding="async" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
     </div>
   )
 }
@@ -421,11 +421,16 @@ function App() {
     if (playbackMetadataRetry.current) audio.removeEventListener('loadedmetadata', playbackMetadataRetry.current)
     playbackMetadataRetry.current = null
     audio.pause()
+    audio.removeAttribute('src')
+    audio.load()
     audio.src = current.url
     setElapsed(0)
     setDuration(current.duration)
     return () => {
       currentTrackId.current = undefined
+      audio.pause()
+      audio.removeAttribute('src')
+      audio.load()
       if (playbackRetryTimer.current) clearTimeout(playbackRetryTimer.current)
       if (playbackMetadataRetry.current) audio.removeEventListener('loadedmetadata', playbackMetadataRetry.current)
       playbackMetadataRetry.current = null
@@ -893,7 +898,7 @@ function JellyfinSettings({ library, onLibraryChange }: { library: Library; onLi
 interface SettingsPageProps { library: Library; updateInfo: UpdateInfo | null; checkingForUpdates: boolean; onAddSource: () => void; onRemoveSource: (folder: string) => void; onRescan: () => void; onLibraryChange: (library: Library) => void; onUpdateSettings: (settings: Partial<Settings>) => void; onCheckForUpdates: () => Promise<void> }
 
 function SettingsBase({ library, updateInfo, checkingForUpdates, onAddSource, onRemoveSource, onRescan, onUpdateSettings, onCheckForUpdates }: SettingsPageProps) {
-  const currentVersion = updateInfo?.currentVersion || '1.0.12'
+  const currentVersion = updateInfo?.currentVersion || '1.0.13'
   const updateStatus = updateInfo?.available ? `Polaris ${updateInfo.latestVersion} is ready to download.` : updateInfo?.error ? 'Could not reach GitHub. Check your connection and try again.' : updateInfo ? `Polaris ${currentVersion} is up to date.` : 'Checking GitHub Releases.'
   return (
     <section className="settings-page">
@@ -930,8 +935,8 @@ function SettingsBase({ library, updateInfo, checkingForUpdates, onAddSource, on
         </div>
         <div className="settings-group settings-group--release">
           <div className="release-copy">
-            <div className="settings-group-title"><ScrollText /><span><h2>What's new in 1.0.12</h2><small>Released through GitHub</small></span></div>
-            <ul><li>Automatic retry when Jellyfin pauses</li><li>Resilient large-library page loading</li><li>Clearer connection and sign-in errors</li></ul>
+            <div className="settings-group-title"><ScrollText /><span><h2>What's new in 1.0.13</h2><small>Released through GitHub</small></span></div>
+            <ul><li>Cancelled Jellyfin streams close promptly</li><li>Artwork loads only as it becomes visible</li><li>Rapid artist and track changes stay responsive</li></ul>
           </div>
           <div className="update-settings"><span className={updateInfo?.available ? 'release-status release-status--available' : 'release-status'}>{updateStatus}</span><div>{updateInfo?.available && <button className="primary-button" onClick={() => window.polaris?.openExternal(updateInfo.downloadUrl)}><Download />Get version {updateInfo.latestVersion}</button>}<button className="secondary-button" disabled={checkingForUpdates} onClick={onCheckForUpdates}><RefreshCw className={checkingForUpdates ? 'spin' : ''} />{checkingForUpdates ? 'Checking' : 'Check for updates'}</button></div></div>
         </div>
