@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.9 - 2026-09-01
+
+- Kept Settings accessible before any music source has been added.
+- Added Folder and Jellyfin server choices to the sidebar source button.
+- Added first-run actions for both local folders and Jellyfin servers.
+- Updated the source summary to count local folders and Jellyfin servers together.
+
 ## 1.0.8 - 2026-09-01
 
 - Added Jellyfin music libraries as first-class Polaris sources.
