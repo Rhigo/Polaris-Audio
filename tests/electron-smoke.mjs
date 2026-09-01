@@ -110,7 +110,7 @@ const artistServer = createServer(async (request, response) => {
   response.setHeader('Content-Type', 'application/json')
   if (url.pathname === '/release') {
     updateRequests += 1
-    return response.end(JSON.stringify({ tag_name: 'v1.0.9', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.9', assets: [{ name: 'Polaris-1.0.9-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.9/Polaris-1.0.9-Portable.exe' }, { name: 'Polaris-1.0.9-Setup.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.9/Polaris-1.0.9-Setup.exe' }] }))
+    return response.end(JSON.stringify({ tag_name: 'v1.0.10', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.10', assets: [{ name: 'Polaris-1.0.10-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.10/Polaris-1.0.10-Portable.exe' }, { name: 'Polaris-1.0.10-Setup.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.10/Polaris-1.0.10-Setup.exe' }] }))
   }
   if (url.pathname === '/audiodb') return response.end(JSON.stringify({ artists: [{ strArtist: 'Cold Play Tribute', strBiographyEN: 'Wrong artist.', strMusicBrainzID: 'wrong-mbid' }, { strArtist: 'Coldplay', strBiographyEN: 'A test biography.', strGenre: 'Alternative', strMusicBrainzID: 'test-mbid', strWebsite: 'coldplay.com', strTwitter: '0' }] }))
   if (url.pathname.includes('/artist/test-mbid')) return response.end(JSON.stringify({ relations: [{ url: { resource: 'https://instagram.com/coldplay' } }] }))
@@ -168,7 +168,7 @@ const app = await electron.launch({
 try {
   const page = await app.firstWindow()
   page.on('console', (message) => console.log(`[renderer:${message.type()}] ${message.text()}`))
-  await page.getByText('Polaris 1.0.9 is available').waitFor({ timeout: 5000 })
+  await page.getByText('Polaris 1.0.10 is available').waitFor({ timeout: 5000 })
   await page.getByRole('button', { name: 'Dismiss update' }).click()
   await page.getByRole('button', { name: 'Songs', exact: true }).click()
   await page.getByRole('button', { name: 'Play Polaris Test Tone' }).click()
@@ -405,13 +405,13 @@ try {
     return track ? (await fetch(track.url, { headers: { Range: 'bytes=0-43' } })).status : 0
   }, secondaryTrackPath)
   if (secondaryMediaStatus !== 206) throw new Error(`Secondary source media was not authorized: ${secondaryMediaStatus}`)
-  await page.getByText('Polaris 1.0.9 is ready to download.').waitFor()
+  await page.getByText('Polaris 1.0.10 is ready to download.').waitFor()
   await page.getByRole('button', { name: 'Check for updates' }).click()
-  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.9 is ready to download.'))
+  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.10 is ready to download.'))
   if (updateRequests < 2) throw new Error(`Manual update check did not reach the release endpoint: ${updateRequests}`)
   const updateInfo = await page.evaluate(() => window.polaris.checkForUpdates())
-  if (!updateInfo.downloadUrl.endsWith('Polaris-1.0.9-Setup.exe')) throw new Error(`Updater did not prefer the installed build: ${updateInfo.downloadUrl}`)
-  await page.getByRole('button', { name: 'Get version 1.0.9' }).waitFor()
+  if (!updateInfo.downloadUrl.endsWith('Polaris-1.0.10-Setup.exe')) throw new Error(`Updater did not prefer the installed build: ${updateInfo.downloadUrl}`)
+  await page.getByRole('button', { name: 'Get version 1.0.10' }).waitFor()
   const titleLogo = page.locator('.wordmark img')
   await titleLogo.waitFor()
   if (!await titleLogo.evaluate((image) => image.complete && image.naturalWidth > 0)) throw new Error('Application logo did not load')
@@ -507,7 +507,16 @@ try {
   await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.tracks.some((track) => track.title === 'Automatically Added')), null, { timeout: 15000 })
   if (await page.locator('.scan-toast').count()) throw new Error('Automatic refresh left foreground scan progress visible')
 
-  console.log(JSON.stringify({ playback, range, scanMs: Math.round(scanMs), mediaGuard: 'passed', automaticLibraryUpdate: 'passed', discovery: 'passed', feedback: 'passed', jellyfin: 'passed', lyrics: 'loaded', navigation: 'passed', playlists: 'passed', supermix: 'passed', settings: 'passed', search: 'passed', sorting: 'passed', rowMenu: 'passed', immersivePlayer: 'passed' }, null, 2))
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  for (const folder of [music, secondMusic]) await page.getByRole('button', { name: `Remove ${folder}`, exact: true }).click()
+  await page.getByRole('heading', { name: 'Jellyfin servers' }).waitFor()
+  await page.getByRole('button', { name: 'Add music source' }).click()
+  await page.getByRole('button', { name: /^Folder/ }).waitFor()
+  await page.getByRole('button', { name: /^Add Jellyfin server/ }).click()
+  await page.getByRole('heading', { name: 'Jellyfin servers' }).waitFor()
+
+  console.log(JSON.stringify({ playback, range, scanMs: Math.round(scanMs), mediaGuard: 'passed', automaticLibraryUpdate: 'passed', discovery: 'passed', emptyLibrarySources: 'passed', feedback: 'passed', jellyfin: 'passed', lyrics: 'loaded', navigation: 'passed', playlists: 'passed', supermix: 'passed', settings: 'passed', search: 'passed', sorting: 'passed', rowMenu: 'passed', immersivePlayer: 'passed' }, null, 2))
 } finally {
   await app.close()
   lyricsServer.close()

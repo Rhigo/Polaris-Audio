@@ -14,8 +14,8 @@ The latest release includes two Windows builds:
 
 | Download | Best for |
 | --- | --- |
-| `Polaris-1.0.8-Setup.exe` | Normal use. Installs Polaris and creates stable Start Menu and desktop shortcuts. |
-| `Polaris-1.0.8-Portable.exe` | Running without installation or from removable storage. |
+| `Polaris-1.0.9-Setup.exe` | Normal use. Installs Polaris and creates stable Start Menu and desktop shortcuts. |
+| `Polaris-1.0.9-Portable.exe` | Running without installation or from removable storage. |
 
 Use the setup build if you want to pin Polaris to the taskbar. The portable build extracts to a temporary directory while it runs, so Windows cannot keep a stable pinned shortcut for it.
 
@@ -200,12 +200,11 @@ For reproducible problems, [open a GitHub issue](https://github.com/Rhigo/Polari
 
 Security issues should be reported according to [SECURITY.md](SECURITY.md).
 
-## What's New in 1.0.8
+## What's New in 1.0.9
 
-- Added local and remote Jellyfin server connections.
-- Added secure Jellyfin sign-in, encrypted access-token storage, and authenticated streaming.
-- Added Jellyfin metadata, artwork, refresh, and disconnect support throughout the existing library.
-- Expanded Electron smoke coverage and made test commands self-contained.
+- Added **Folder** and **Add Jellyfin server** choices to the source button.
+- Made Settings and Jellyfin setup available before a local library exists.
+- Made first-run setup work for Jellyfin-only libraries.
 
 See [CHANGELOG.md](CHANGELOG.md) for the complete release history.
 

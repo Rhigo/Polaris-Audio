@@ -291,6 +291,7 @@ function App() {
   const playbackMetadataRetry = useRef<(() => void) | null>(null)
   const current = queue[queueIndex]
   const currentTrackId = useRef<string | undefined>(current?.id)
+  const sourceCount = library.folders.length + library.jellyfinServers.length
 
   const setVolume = (value: number) => {
     pendingVolume.current = value
@@ -734,13 +735,14 @@ function App() {
   )
 
   const content = () => {
+    if (view === 'settings') return <SettingsPage library={library} updateInfo={updateInfo} checkingForUpdates={checkingForUpdates} onAddSource={addSource} onRemoveSource={removeSource} onRescan={rescan} onLibraryChange={(value) => { setLibrary(value); setSupermixHistory(value.history) }} onUpdateSettings={updateSettings} onCheckForUpdates={runUpdateCheck} />
     if (!library.tracks.length) return (
       <section className="empty-library">
         <div className="empty-symbol"><Music2 /><span><Sparkles /></span></div>
         <p className="eyebrow">Your music, in its element</p>
         <h1>Bring your library into focus.</h1>
-        <p>Choose a local or network folder. Polaris reads your tags, embedded artwork, audio quality, and LRC lyrics without uploading your music.</p>
-        <button className="primary-button" onClick={addSource}><FolderPlus /> Add music source</button>
+        <p>Add a local or network folder, or connect your Jellyfin server. Polaris brings every source into one private library.</p>
+        <div className="empty-library-actions"><button className="primary-button" onClick={addSource}><FolderPlus />Add folder</button><button className="secondary-button" onClick={() => showView('settings')}><Cloud />Add Jellyfin server</button></div>
         <small>FLAC, MP3, AAC, ALAC, OGG, Opus, WAV, WMA and APE</small>
       </section>
     )
@@ -752,7 +754,6 @@ function App() {
       const playlistTracks = playlist.trackIds.map((id) => libraryIndex.tracksById.get(id)).filter(Boolean) as Track[]
       return <section><div className="feature-heading"><div><p className="eyebrow">Playlist</p><h1>{playlist.name}</h1><p>{playlistTracks.length} songs · Drag rows to reorder.</p></div><div className="heading-actions"><button className="secondary-button danger" onClick={() => removePlaylist(playlist.id)}><Trash2 />Delete</button><button className="primary-button" disabled={!playlistTracks.length} onClick={() => playlistTracks[0] && playTrack(playlistTracks[0], playlistTracks)}><Play />Play</button></div></div>{playlistTracks.length ? renderRows(playlistTracks, playlist.id) : <div className="empty-state"><ListMusic /><strong>This playlist is empty</strong><span>Drag songs onto its name in the sidebar or use a song’s menu.</span></div>}</section>
     }
-    if (view === 'settings') return <SettingsPage library={library} updateInfo={updateInfo} checkingForUpdates={checkingForUpdates} onAddSource={addSource} onRemoveSource={removeSource} onRescan={rescan} onLibraryChange={(value) => { setLibrary(value); setSupermixHistory(value.history) }} onUpdateSettings={updateSettings} onCheckForUpdates={runUpdateCheck} />
     if (selectedAlbum) {
       const albumTracks = [...(libraryIndex.tracksByAlbum.get(`${selectedArtist}\0${selectedAlbum}`) || [])].sort((a, b) => a.disc - b.disc || a.track - b.track)
       const lead = albumTracks[0]
@@ -817,7 +818,7 @@ function App() {
           <div className="playlist-nav">{library.playlists.map((playlist) => <button key={playlist.id} className={view === 'playlist' && selectedPlaylist === playlist.id ? 'active' : ''} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addTrackToPlaylist(playlist.id, event.dataTransfer.getData('text/polaris-track')) }} onClick={() => { setSelectedPlaylist(playlist.id); showView('playlist') }}><ListMusic /><span>{playlist.name}</span><small>{playlist.trackIds.length}</small></button>)}</div>
           <NavButton icon={<SettingsIcon />} label="Settings" active={view === 'settings'} onClick={() => showView('settings')} />
         </nav>
-        <div className="source-card"><LibraryIcon /><span><strong>{library.folders.length ? `${library.folders.length} music ${library.folders.length === 1 ? 'source' : 'sources'}` : 'No source added'}</strong><small>{library.folders.length === 1 ? library.folders[0] : library.folders.length ? `${library.tracks.length.toLocaleString()} songs indexed` : 'Choose a local or NAS folder'}</small></span><IconButton label={library.folders.length ? 'Rescan library' : 'Add music source'} onClick={rescan}>{library.folders.length ? <RefreshCw /> : <Plus />}</IconButton></div>
+        <div className="source-card" onClick={(event) => event.stopPropagation()}><LibraryIcon /><span><strong>{sourceCount ? `${sourceCount} music ${sourceCount === 1 ? 'source' : 'sources'}` : 'No source added'}</strong><small>{library.folders.length === 1 && !library.jellyfinServers.length ? library.folders[0] : library.jellyfinServers.length === 1 && !library.folders.length ? library.jellyfinServers[0].name : sourceCount ? `${library.tracks.length.toLocaleString()} songs indexed` : 'Choose a folder or Jellyfin server'}</small></span><IconButton label="Add music source" active={openRowMenu === 'sources'} onClick={() => setOpenRowMenu(openRowMenu === 'sources' ? '' : 'sources')}><Plus /></IconButton>{openRowMenu === 'sources' && <div className="source-menu"><button onClick={() => { setOpenRowMenu(''); addSource() }}><FolderPlus /><span><strong>Folder</strong><small>Local, mapped drive, or NAS share</small></span></button><button onClick={() => { setOpenRowMenu(''); showView('settings') }}><Cloud /><span><strong>Add Jellyfin server</strong><small>Connect with your server URL</small></span></button></div>}</div>
       </aside>
       <main className="content">{view === 'playlist' && selectedPlaylist && (renamingPlaylist ? <div className="playlist-rename-editor"><input aria-label="Playlist name" autoFocus value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') savePlaylistName(); if (event.key === 'Escape') setRenamingPlaylist(false) }} /><button className="secondary-button" onClick={savePlaylistName}>Save playlist name</button><IconButton label="Cancel rename" onClick={() => setRenamingPlaylist(false)}><X /></IconButton></div> : <button className="playlist-rename-button secondary-button" onClick={renameSelectedPlaylist}>Rename playlist</button>)}{content()}</main>
       {playbackError && <div className="playback-error"><AudioLines /><span><strong>Could not play this song</strong><small>{playbackError}</small></span><IconButton label="Dismiss" onClick={() => setPlaybackError('')}><X /></IconButton></div>}
@@ -887,7 +888,7 @@ function JellyfinSettings({ library, onLibraryChange }: { library: Library; onLi
 interface SettingsPageProps { library: Library; updateInfo: UpdateInfo | null; checkingForUpdates: boolean; onAddSource: () => void; onRemoveSource: (folder: string) => void; onRescan: () => void; onLibraryChange: (library: Library) => void; onUpdateSettings: (settings: Partial<Settings>) => void; onCheckForUpdates: () => Promise<void> }
 
 function SettingsBase({ library, updateInfo, checkingForUpdates, onAddSource, onRemoveSource, onRescan, onUpdateSettings, onCheckForUpdates }: SettingsPageProps) {
-  const currentVersion = updateInfo?.currentVersion || '1.0.8'
+  const currentVersion = updateInfo?.currentVersion || '1.0.9'
   const updateStatus = updateInfo?.available ? `Polaris ${updateInfo.latestVersion} is ready to download.` : updateInfo?.error ? 'Could not reach GitHub. Check your connection and try again.' : updateInfo ? `Polaris ${currentVersion} is up to date.` : 'Checking GitHub Releases.'
   return (
     <section className="settings-page">
@@ -924,8 +925,8 @@ function SettingsBase({ library, updateInfo, checkingForUpdates, onAddSource, on
         </div>
         <div className="settings-group settings-group--release">
           <div className="release-copy">
-            <div className="settings-group-title"><ScrollText /><span><h2>What's new in 1.0.8</h2><small>Released through GitHub</small></span></div>
-            <ul><li>Local and remote Jellyfin music libraries</li><li>Encrypted Jellyfin access-token storage</li><li>Authenticated remote artwork and audio streaming</li></ul>
+            <div className="settings-group-title"><ScrollText /><span><h2>What's new in 1.0.9</h2><small>Released through GitHub</small></span></div>
+            <ul><li>Folder and Jellyfin choices in the source menu</li><li>Jellyfin setup before adding local music</li><li>Source counts for local and remote libraries</li></ul>
           </div>
           <div className="update-settings"><span className={updateInfo?.available ? 'release-status release-status--available' : 'release-status'}>{updateStatus}</span><div>{updateInfo?.available && <button className="primary-button" onClick={() => window.polaris?.openExternal(updateInfo.downloadUrl)}><Download />Get version {updateInfo.latestVersion}</button>}<button className="secondary-button" disabled={checkingForUpdates} onClick={onCheckForUpdates}><RefreshCw className={checkingForUpdates ? 'spin' : ''} />{checkingForUpdates ? 'Checking' : 'Check for updates'}</button></div></div>
         </div>
