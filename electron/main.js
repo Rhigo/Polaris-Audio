@@ -271,8 +271,9 @@ async function jellyfinJson(server, credential, endpoint, options = {}, timeout 
 
 const sendJellyfinProgress = (message, current = 0, total = 0) => mainWindow?.webContents.send('jellyfin:progress', { message, current, total })
 
-const jellyfinAudioUrl = (serverId, itemId) => `polaris://jellyfin/audio/${encodeURIComponent(serverId)}/${encodeURIComponent(itemId)}`
-const jellyfinArtworkUrl = (serverId, itemId) => `polaris://jellyfin/image/${encodeURIComponent(serverId)}/${encodeURIComponent(itemId)}`
+const jellyfinAudioUrl = (serverId, itemId, mediaSourceId) => `polaris://jellyfin/audio/${encodeURIComponent(serverId)}/${encodeURIComponent(itemId)}/${encodeURIComponent(mediaSourceId || '')}`
+const jellyfinArtworkUrl = (serverId, itemId, fallbackItemId) => `polaris://jellyfin/image/${encodeURIComponent(serverId)}/${encodeURIComponent(itemId)}/${encodeURIComponent(fallbackItemId || '')}`
+const jellyfinLyricsPath = (serverId, itemId) => `jellyfin://lyrics/${encodeURIComponent(serverId)}/${encodeURIComponent(itemId)}`
 
 function jellyfinTrack(server, item, previous) {
   const mediaSource = item.MediaSources?.[0] || {}
@@ -280,16 +281,18 @@ function jellyfinTrack(server, item, previous) {
   const container = String(mediaSource.Container || item.Container || '').toLowerCase()
   const albumArtist = item.AlbumArtist || item.AlbumArtists?.[0]?.Name || item.Artists?.[0] || 'Unknown Artist'
   const artist = item.Artists?.[0] || albumArtist
-  const imageItemId = item.PrimaryImageItemId || item.AlbumId || item.Id
+  const hasItemArtwork = Boolean(item.ImageTags?.Primary || item.PrimaryImageTag)
+  const imageItemId = hasItemArtwork ? item.Id : item.PrimaryImageItemId || item.AlbumId || item.Id
+  const fallbackImageItemId = imageItemId !== item.AlbumId ? item.AlbumId : ''
   const hasArtwork = Boolean(item.ImageTags?.Primary || item.PrimaryImageTag || item.PrimaryImageItemId || item.AlbumId)
   return {
-    id: `jellyfin:${server.id}:${item.Id}`, path: `jellyfin://${server.id}/${item.Id}`, url: jellyfinAudioUrl(server.id, item.Id),
+    id: `jellyfin:${server.id}:${item.Id}`, path: `jellyfin://${server.id}/${item.Id}`, url: jellyfinAudioUrl(server.id, item.Id, mediaSource.Id),
     title: item.Name || 'Unknown Title', artist, albumArtist, album: item.Album || 'Unknown Album',
     year: Number(item.ProductionYear) || 0, track: Number(item.IndexNumber) || 0, disc: Number(item.ParentIndexNumber) || 1,
     genre: item.Genres?.[0] || '', duration: Number(item.RunTimeTicks) / 10000000 || 0,
     sampleRate: Number(audioStream.SampleRate) || 0, bitDepth: Number(audioStream.BitDepth) || 0,
     lossless: ['flac', 'alac', 'wav', 'ape'].some((format) => container.split(',').includes(format)),
-    artwork: hasArtwork ? jellyfinArtworkUrl(server.id, imageItemId) : '', lyricPath: '', embeddedLyrics: '',
+    artwork: hasArtwork ? jellyfinArtworkUrl(server.id, imageItemId, fallbackImageItemId) : '', lyricPath: jellyfinLyricsPath(server.id, item.Id), embeddedLyrics: '',
     addedAt: previous?.addedAt || Date.parse(item.DateCreated || '') || Date.now(), fileSize: Number(mediaSource.Size) || undefined,
     sourceType: 'jellyfin', sourceId: server.id, remoteId: item.Id,
   }
@@ -696,12 +699,27 @@ async function onlineLyrics(track) {
   return request
 }
 
+async function jellyfinLyrics(lyricPath) {
+  const [, encodedServerId, encodedItemId] = new URL(lyricPath).pathname.split('/')
+  const serverId = decodeURIComponent(encodedServerId || '')
+  const itemId = decodeURIComponent(encodedItemId || '')
+  const access = await jellyfinAccess(serverId)
+  if (!access || !itemId) return []
+  const query = new URLSearchParams({ UserId: access.server.userId })
+  const response = await jellyfinJson(access.server, access.credential, `/Audio/${encodeURIComponent(itemId)}/Lyrics?${query}`)
+  if (!response.ok || !Array.isArray(response.data.Lyrics)) return []
+  return response.data.Lyrics
+    .filter((line) => typeof line?.Text === 'string' && line.Text.trim())
+    .map((line) => ({ time: line.Start == null ? null : Number(line.Start) / 10000000, text: line.Text.trim() }))
+}
+
 async function jellyfinResponse(request) {
   try {
     const url = new URL(request.url)
-    const [, kind, encodedServerId, encodedItemId] = url.pathname.split('/')
+    const [, kind, encodedServerId, encodedItemId, encodedFallbackId] = url.pathname.split('/')
     const serverId = decodeURIComponent(encodedServerId || '')
     const itemId = decodeURIComponent(encodedItemId || '')
+    const fallbackId = decodeURIComponent(encodedFallbackId || '')
     const access = await jellyfinAccess(serverId)
     const server = access?.server
     const credential = access?.credential
@@ -711,6 +729,7 @@ async function jellyfinResponse(request) {
       const query = new URLSearchParams({
         UserId: server.userId, DeviceId: credential.deviceId, Static: 'true',
       })
+      if (fallbackId) query.set('MediaSourceId', fallbackId)
       endpoint = `/Audio/${encodeURIComponent(itemId)}/stream?${query}`
     } else if (kind === 'image') {
       const maxWidth = Math.min(1200, Math.max(64, Number(url.searchParams.get('maxWidth')) || 1200))
@@ -719,7 +738,12 @@ async function jellyfinResponse(request) {
     const headers = {}
     const range = request.headers.get('range')
     if (range) headers.Range = range
-    const upstream = await jellyfinFetch(server, credential, endpoint, { headers }, 0)
+    let upstream = await jellyfinFetch(server, credential, endpoint, { headers }, 0)
+    if (kind === 'image' && !upstream.ok && fallbackId && fallbackId !== itemId) {
+      const maxWidth = Math.min(1200, Math.max(64, Number(url.searchParams.get('maxWidth')) || 1200))
+      endpoint = `/Items/${encodeURIComponent(fallbackId)}/Images/Primary?maxWidth=${maxWidth}&quality=90`
+      upstream = await jellyfinFetch(server, credential, endpoint, { headers }, 0)
+    }
     const responseHeaders = new Headers()
     for (const name of ['accept-ranges', 'cache-control', 'content-length', 'content-range', 'content-type', 'etag', 'last-modified']) {
       const value = upstream.headers.get(name)
@@ -834,6 +858,11 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('lyrics:get', async (_, lyricPath, embedded, trackPath, track) => {
     try {
+      if (lyricPath?.startsWith('jellyfin://lyrics/')) {
+        const remoteLyrics = await jellyfinLyrics(lyricPath)
+        if (remoteLyrics.length) return remoteLyrics
+        return (await readCache()).settings.onlineLyrics ? onlineLyrics(track) : []
+      }
       const resolvedPath = lyricPath || (trackPath ? await findLyrics(trackPath) : '')
       const content = resolvedPath ? await fs.readFile(resolvedPath, 'utf8') : embedded || ''
       const localLyrics = parseLyrics(content.replace(/^\uFEFF/, ''))

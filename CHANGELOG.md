@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.11 - 2026-09-01
+
+- Added authenticated loading of local lyrics stored with Jellyfin audio items.
+- Preferred song-level primary artwork and added album artwork fallback when Jellyfin returns a missing image.
+- Included Jellyfin media source IDs in static stream requests so multi-version items play the selected source.
+- Added end-to-end regression coverage for remote lyrics, artwork fallback, and media-source-specific playback.
+
 ## 1.0.10 - 2026-09-01
 
 - Added visible Jellyfin connection and library-sync progress.
