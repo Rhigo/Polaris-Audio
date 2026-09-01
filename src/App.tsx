@@ -1,6 +1,6 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Album, ArrowLeft, AudioLines, ChevronDown, Code2, Disc3, Download, ExternalLink, FolderPlus, Heart, Home, Library as LibraryIcon,
+  Album, ArrowLeft, AudioLines, ChevronDown, Cloud, Code2, Disc3, Download, ExternalLink, FolderPlus, Heart, Home, Library as LibraryIcon,
   ChevronRight, GripVertical, ListMusic, Maximize2, Mic2, MoreHorizontal, Music2, Pause, Play, Plus, RefreshCw,
   Repeat, Repeat1, ScrollText, Search, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Sparkles,
   Settings as SettingsIcon, ThumbsDown, ThumbsUp, Trash2, UserRound, Volume1, Volume2, VolumeX, WandSparkles, X,
@@ -22,7 +22,7 @@ const defaultSettings: Settings = {
   visualizerOpacity: 0.24, visualizerColor: '#f6f3ed', reduceMotion: false, volume: 0.82, shuffle: false, repeat: 'off',
   libraryExpanded: true, dynamicBackground: true, accentColor: '#6832c2',
 }
-const emptyLibrary: Library = { folders: [], folder: '', tracks: [], history: [], favorites: [], liked: [], disliked: [], playlists: [], settings: defaultSettings }
+const emptyLibrary: Library = { folders: [], folder: '', tracks: [], history: [], favorites: [], liked: [], disliked: [], playlists: [], jellyfinServers: [], settings: defaultSettings }
 const artColors = ['#cd493f', '#18737f', '#a37736', '#485ca8', '#9c4368', '#557248']
 const accentPresets = [
   { name: 'Polaris purple', color: '#6832c2' }, { name: 'Coral', color: '#f0504d' },
@@ -360,7 +360,7 @@ function App() {
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: current.title, artist: current.artist, album: current.album,
-        artwork: current.artwork ? [{ src: current.artwork }] : [],
+        artwork: /^(?:https?|data|blob):/i.test(current.artwork) ? [{ src: current.artwork }] : [],
       })
     }
     return () => { active = false }
@@ -752,7 +752,7 @@ function App() {
       const playlistTracks = playlist.trackIds.map((id) => libraryIndex.tracksById.get(id)).filter(Boolean) as Track[]
       return <section><div className="feature-heading"><div><p className="eyebrow">Playlist</p><h1>{playlist.name}</h1><p>{playlistTracks.length} songs · Drag rows to reorder.</p></div><div className="heading-actions"><button className="secondary-button danger" onClick={() => removePlaylist(playlist.id)}><Trash2 />Delete</button><button className="primary-button" disabled={!playlistTracks.length} onClick={() => playlistTracks[0] && playTrack(playlistTracks[0], playlistTracks)}><Play />Play</button></div></div>{playlistTracks.length ? renderRows(playlistTracks, playlist.id) : <div className="empty-state"><ListMusic /><strong>This playlist is empty</strong><span>Drag songs onto its name in the sidebar or use a song’s menu.</span></div>}</section>
     }
-    if (view === 'settings') return <SettingsPage library={library} updateInfo={updateInfo} checkingForUpdates={checkingForUpdates} onAddSource={addSource} onRemoveSource={removeSource} onRescan={rescan} onUpdateSettings={updateSettings} onCheckForUpdates={runUpdateCheck} />
+    if (view === 'settings') return <SettingsPage library={library} updateInfo={updateInfo} checkingForUpdates={checkingForUpdates} onAddSource={addSource} onRemoveSource={removeSource} onRescan={rescan} onLibraryChange={(value) => { setLibrary(value); setSupermixHistory(value.history) }} onUpdateSettings={updateSettings} onCheckForUpdates={runUpdateCheck} />
     if (selectedAlbum) {
       const albumTracks = [...(libraryIndex.tracksByAlbum.get(`${selectedArtist}\0${selectedAlbum}`) || [])].sort((a, b) => a.disc - b.disc || a.track - b.track)
       const lead = albumTracks[0]
@@ -849,10 +849,93 @@ function SettingToggle({ label, description, checked, onChange }: { label: strin
   return <label className="setting-toggle"><span><strong>{label}</strong><small>{description}</small></span><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /></label>
 }
 
-function SettingsPage({ library, updateInfo, checkingForUpdates, onAddSource, onRemoveSource, onRescan, onUpdateSettings, onCheckForUpdates }: { library: Library; updateInfo: UpdateInfo | null; checkingForUpdates: boolean; onAddSource: () => void; onRemoveSource: (folder: string) => void; onRescan: () => void; onUpdateSettings: (settings: Partial<Settings>) => void; onCheckForUpdates: () => Promise<void> }) {
-  const currentVersion = updateInfo?.currentVersion || '1.0.7'
+function JellyfinSettings({ library, onLibraryChange }: { library: Library; onLibraryChange: (library: Library) => void }) {
+  const [url, setUrl] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const message = (reason: unknown) => reason instanceof Error ? reason.message.replace(/^Error invoking remote method '[^']+': Error: /, '') : 'Jellyfin could not complete that request.'
+  const connect = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setBusy('connect')
+    setError('')
+    try {
+      const next = await window.polaris?.connectJellyfin({ url, username, password })
+      if (next) onLibraryChange(next)
+      setPassword('')
+    } catch (reason) { setError(message(reason)) }
+    finally { setBusy('') }
+  }
+  const refresh = async (serverId: string) => {
+    setBusy(serverId)
+    setError('')
+    try { const next = await window.polaris?.refreshJellyfin(serverId); if (next) onLibraryChange(next) }
+    catch (reason) { setError(message(reason)) }
+    finally { setBusy('') }
+  }
+  const disconnect = async (serverId: string) => {
+    setBusy(serverId)
+    setError('')
+    try { const next = await window.polaris?.disconnectJellyfin(serverId); if (next) onLibraryChange(next) }
+    catch (reason) { setError(message(reason)) }
+    finally { setBusy('') }
+  }
+  return <div className="settings-group settings-group--jellyfin"><div className="settings-group-title"><Cloud /><span><h2>Jellyfin servers</h2><small>Stream your music from home or across the internet</small></span></div>{library.jellyfinServers.length > 0 && <div className="source-list">{library.jellyfinServers.map((server) => { const trackCount = library.tracks.filter((track) => track.sourceId === server.id).length; return <div className="source-item jellyfin-source" key={server.id}><Cloud /><span><strong>{server.name}</strong><small>{server.username} · {trackCount.toLocaleString()} songs · {server.url}</small></span><IconButton label={`Refresh ${server.name}`} disabled={Boolean(busy)} onClick={() => refresh(server.id)}><RefreshCw className={busy === server.id ? 'spin' : ''} /></IconButton><IconButton label={`Disconnect ${server.name}`} disabled={Boolean(busy)} onClick={() => disconnect(server.id)}><Trash2 /></IconButton></div> })}</div>}<form className="jellyfin-form" onSubmit={connect}><label><span>Server URL</span><input type="text" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://music.example.com" autoComplete="url" required /></label><label><span>Username</span><input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label><label><span>Password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label><button className="secondary-button" disabled={Boolean(busy)} type="submit">{busy === 'connect' ? <RefreshCw className="spin" /> : <Cloud />}Connect</button></form>{error && <p className="jellyfin-error" role="alert">{error}</p>}<p className="background-scan-note">Use trusted HTTPS for servers available on the internet. Passwords are never saved; the access token is encrypted by Windows.</p></div>
+}
+
+interface SettingsPageProps { library: Library; updateInfo: UpdateInfo | null; checkingForUpdates: boolean; onAddSource: () => void; onRemoveSource: (folder: string) => void; onRescan: () => void; onLibraryChange: (library: Library) => void; onUpdateSettings: (settings: Partial<Settings>) => void; onCheckForUpdates: () => Promise<void> }
+
+function SettingsBase({ library, updateInfo, checkingForUpdates, onAddSource, onRemoveSource, onRescan, onUpdateSettings, onCheckForUpdates }: SettingsPageProps) {
+  const currentVersion = updateInfo?.currentVersion || '1.0.8'
   const updateStatus = updateInfo?.available ? `Polaris ${updateInfo.latestVersion} is ready to download.` : updateInfo?.error ? 'Could not reach GitHub. Check your connection and try again.' : updateInfo ? `Polaris ${currentVersion} is up to date.` : 'Checking GitHub Releases.'
-  return <section className="settings-page"><div className="settings-heading"><div><p className="eyebrow">Polaris control room</p><h1>Settings</h1><p>Tune the library, playback experience, and how Polaris looks.</p></div><div className="release-mark"><img src={logoUrl} alt="" /><span><small>Current release</small><strong>Polaris {currentVersion}</strong></span><button className="secondary-button" onClick={() => window.polaris?.openExternal('https://github.com/Rhigo/Polaris-Audio')}><Code2 />GitHub<ExternalLink /></button></div></div><div className="settings-groups"><div className="settings-group settings-group--sources"><div className="settings-group-title"><LibraryIcon /><span><h2>Music sources</h2><small>Local folders, mapped drives, and NAS shares</small></span></div><div className="source-list">{library.folders.length ? library.folders.map((folder) => <div className="source-item" key={folder}><LibraryIcon /><span><strong>{folder.split(/[\\/]/).filter(Boolean).at(-1) || folder}</strong><small>{folder}</small></span><IconButton label={`Remove ${folder}`} onClick={() => onRemoveSource(folder)}><Trash2 /></IconButton></div>) : <div className="source-empty"><FolderPlus /><span><strong>No music sources yet</strong><small>Add a folder to begin building your library.</small></span></div>}</div><div className="settings-source-actions"><button className="secondary-button" onClick={onAddSource}><FolderPlus />Add source</button><button className="secondary-button" disabled={!library.folders.length} onClick={onRescan}><RefreshCw />Rescan now</button></div><p className="background-scan-note">File changes refresh quietly in the background. Rescan now is the only scan that shows progress.</p></div><div className="settings-group"><div className="settings-group-title"><Mic2 /><span><h2>Lyrics</h2><small>Local, embedded, and online words</small></span></div><SettingToggle label="Online fallback" description="Use LRCLIB when local and embedded lyrics are unavailable." checked={library.settings.onlineLyrics} onChange={(checked) => onUpdateSettings({ onlineLyrics: checked })} /><label>Contrast<select value={library.settings.lyricsContrast} onChange={(event) => onUpdateSettings({ lyricsContrast: event.target.value as Settings['lyricsContrast'] })}><option value="normal">Normal</option><option value="high">High</option><option value="maximum">Maximum</option></select></label></div><div className="settings-group settings-group--visualizer"><div className="settings-group-title"><SlidersHorizontal /><span><h2>Visualizer</h2><small>Motion and audio response</small></span></div><label>Style<select value={library.settings.visualizerStyle} onChange={(event) => onUpdateSettings({ visualizerStyle: event.target.value as Settings['visualizerStyle'] })}><option value="off">Off</option><option value="spectrum">Spectrum</option><option value="waveform">Waveform</option><option value="ambient">Ambient bars</option></select></label><label>Intensity<input type="range" min="0.1" max="1" step="0.05" value={library.settings.visualizerIntensity} onChange={(event) => onUpdateSettings({ visualizerIntensity: Number(event.target.value) })} /></label><label>Opacity<input type="range" min="0.05" max="0.6" step="0.05" value={library.settings.visualizerOpacity} onChange={(event) => onUpdateSettings({ visualizerOpacity: Number(event.target.value) })} /></label><label>Color<input type="color" value={library.settings.visualizerColor} onChange={(event) => onUpdateSettings({ visualizerColor: event.target.value })} /></label><SettingToggle label="Reduce motion" description="Keep visual effects restrained." checked={library.settings.reduceMotion} onChange={(checked) => onUpdateSettings({ reduceMotion: checked })} /></div><div className="settings-group"><div className="settings-group-title"><Sparkles /><span><h2>Appearance</h2><small>Make Polaris feel like yours</small></span></div><p>Choose the accent used for active controls and highlights.</p><fieldset className="accent-picker"><legend>Accent color</legend><div>{accentPresets.map((preset) => <button key={preset.color} className={library.settings.accentColor === preset.color ? 'active' : ''} style={{ '--swatch': preset.color } as React.CSSProperties} aria-label={preset.name} title={preset.name} onClick={() => onUpdateSettings({ accentColor: preset.color })}><span /></button>)}</div></fieldset></div><div className="settings-group settings-group--release"><div className="release-copy"><div className="settings-group-title"><ScrollText /><span><h2>What's new in 1.0.7</h2><small>Released through GitHub</small></span></div><ul><li>Optional auto-scroll for lyrics without timestamps</li><li>Persisted lyric scrolling preference</li><li>Clearer installed update download messaging</li></ul></div><div className="update-settings"><span className={updateInfo?.available ? 'release-status release-status--available' : 'release-status'}>{updateStatus}</span><div>{updateInfo?.available && <button className="primary-button" onClick={() => window.polaris?.openExternal(updateInfo.downloadUrl)}><Download />Get version {updateInfo.latestVersion}</button>}<button className="secondary-button" disabled={checkingForUpdates} onClick={onCheckForUpdates}><RefreshCw className={checkingForUpdates ? 'spin' : ''} />{checkingForUpdates ? 'Checking' : 'Check for updates'}</button></div></div></div></div></section>
+  return (
+    <section className="settings-page">
+      <div className="settings-heading">
+        <div><p className="eyebrow">Polaris control room</p><h1>Settings</h1><p>Tune the library, playback experience, and how Polaris looks.</p></div>
+        <div className="release-mark"><img src={logoUrl} alt="" /><span><small>Current release</small><strong>Polaris {currentVersion}</strong></span><button className="secondary-button" onClick={() => window.polaris?.openExternal('https://github.com/Rhigo/Polaris-Audio')}><Code2 />GitHub<ExternalLink /></button></div>
+      </div>
+      <div className="settings-groups">
+        <div className="settings-group settings-group--sources">
+          <div className="settings-group-title"><LibraryIcon /><span><h2>Music sources</h2><small>Local folders, mapped drives, and NAS shares</small></span></div>
+          <div className="source-list">
+            {library.folders.length ? library.folders.map((folder) => <div className="source-item" key={folder}><LibraryIcon /><span><strong>{folder.split(/[\\/]/).filter(Boolean).at(-1) || folder}</strong><small>{folder}</small></span><IconButton label={`Remove ${folder}`} onClick={() => onRemoveSource(folder)}><Trash2 /></IconButton></div>) : <div className="source-empty"><FolderPlus /><span><strong>No music sources yet</strong><small>Add a folder to begin building your library.</small></span></div>}
+          </div>
+          <div className="settings-source-actions"><button className="secondary-button" onClick={onAddSource}><FolderPlus />Add source</button><button className="secondary-button" disabled={!library.folders.length} onClick={onRescan}><RefreshCw />Rescan now</button></div>
+          <p className="background-scan-note">File changes refresh quietly in the background. Rescan now is the only scan that shows progress.</p>
+        </div>
+        <div className="settings-group">
+          <div className="settings-group-title"><Mic2 /><span><h2>Lyrics</h2><small>Local, embedded, and online words</small></span></div>
+          <SettingToggle label="Online fallback" description="Use LRCLIB when local and embedded lyrics are unavailable." checked={library.settings.onlineLyrics} onChange={(checked) => onUpdateSettings({ onlineLyrics: checked })} />
+          <label>Contrast<select value={library.settings.lyricsContrast} onChange={(event) => onUpdateSettings({ lyricsContrast: event.target.value as Settings['lyricsContrast'] })}><option value="normal">Normal</option><option value="high">High</option><option value="maximum">Maximum</option></select></label>
+        </div>
+        <div className="settings-group settings-group--visualizer">
+          <div className="settings-group-title"><SlidersHorizontal /><span><h2>Visualizer</h2><small>Motion and audio response</small></span></div>
+          <label>Style<select value={library.settings.visualizerStyle} onChange={(event) => onUpdateSettings({ visualizerStyle: event.target.value as Settings['visualizerStyle'] })}><option value="off">Off</option><option value="spectrum">Spectrum</option><option value="waveform">Waveform</option><option value="ambient">Ambient bars</option></select></label>
+          <label>Intensity<input type="range" min="0.1" max="1" step="0.05" value={library.settings.visualizerIntensity} onChange={(event) => onUpdateSettings({ visualizerIntensity: Number(event.target.value) })} /></label>
+          <label>Opacity<input type="range" min="0.05" max="0.6" step="0.05" value={library.settings.visualizerOpacity} onChange={(event) => onUpdateSettings({ visualizerOpacity: Number(event.target.value) })} /></label>
+          <label>Color<input type="color" value={library.settings.visualizerColor} onChange={(event) => onUpdateSettings({ visualizerColor: event.target.value })} /></label>
+          <SettingToggle label="Reduce motion" description="Keep visual effects restrained." checked={library.settings.reduceMotion} onChange={(checked) => onUpdateSettings({ reduceMotion: checked })} />
+        </div>
+        <div className="settings-group">
+          <div className="settings-group-title"><Sparkles /><span><h2>Appearance</h2><small>Make Polaris feel like yours</small></span></div>
+          <p>Choose the accent used for active controls and highlights.</p>
+          <fieldset className="accent-picker"><legend>Accent color</legend><div>{accentPresets.map((preset) => <button key={preset.color} className={library.settings.accentColor === preset.color ? 'active' : ''} style={{ '--swatch': preset.color } as React.CSSProperties} aria-label={preset.name} title={preset.name} onClick={() => onUpdateSettings({ accentColor: preset.color })}><span /></button>)}</div></fieldset>
+        </div>
+        <div className="settings-group settings-group--release">
+          <div className="release-copy">
+            <div className="settings-group-title"><ScrollText /><span><h2>What's new in 1.0.8</h2><small>Released through GitHub</small></span></div>
+            <ul><li>Local and remote Jellyfin music libraries</li><li>Encrypted Jellyfin access-token storage</li><li>Authenticated remote artwork and audio streaming</li></ul>
+          </div>
+          <div className="update-settings"><span className={updateInfo?.available ? 'release-status release-status--available' : 'release-status'}>{updateStatus}</span><div>{updateInfo?.available && <button className="primary-button" onClick={() => window.polaris?.openExternal(updateInfo.downloadUrl)}><Download />Get version {updateInfo.latestVersion}</button>}<button className="secondary-button" disabled={checkingForUpdates} onClick={onCheckForUpdates}><RefreshCw className={checkingForUpdates ? 'spin' : ''} />{checkingForUpdates ? 'Checking' : 'Check for updates'}</button></div></div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function SettingsPage(props: SettingsPageProps) {
+  return <><SettingsBase {...props} /><section className="settings-page settings-page--remote"><div className="settings-groups settings-groups--remote"><JellyfinSettings library={props.library} onLibraryChange={props.onLibraryChange} /></div></section></>
 }
 
 function AlbumCard({ track, onClick }: { track: Track; onClick: () => void }) {
