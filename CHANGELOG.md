@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.13 - 2026-09-01
+
+- Propagated cancelled custom-protocol responses to upstream Jellyfin requests so abandoned audio and artwork streams close promptly.
+- Explicitly released the previous audio source before changing tracks.
+- Deferred off-screen artwork loading to avoid opening hundreds of simultaneous image requests.
+- Increased metadata page size and loaded up to three pages concurrently to reduce large-library refresh time without flooding the server.
+- Added a stress regression that aborts repeated partial Jellyfin streams and verifies every started upstream connection closes before playback and refresh continue.
+
 ## 1.0.12 - 2026-09-01
 
 - Added bounded retries with backoff for transient Jellyfin timeouts and retryable HTTP responses.

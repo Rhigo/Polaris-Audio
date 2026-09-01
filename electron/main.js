@@ -320,21 +320,27 @@ async function syncJellyfinServer(serverId) {
   if (!server || !credential) throw new Error('Reconnect this Jellyfin server before refreshing it.')
   const existing = new Map(library.tracks.filter((track) => track.sourceType === 'jellyfin' && track.sourceId === serverId).map((track) => [track.remoteId, track]))
   const items = []
-  const pageSize = 200
+  const pageSize = 500
   sendJellyfinProgress('Loading music from Jellyfin...')
-  for (let startIndex = 0; ; startIndex += pageSize) {
+  const loadPage = async (startIndex) => {
     const query = new URLSearchParams({
       UserId: server.userId, Recursive: 'true', IncludeItemTypes: 'Audio', Fields: 'Genres,DateCreated,MediaSources,MediaStreams,PrimaryImageAspectRatio',
       EnableImages: 'true', ImageTypeLimit: '1', SortBy: 'SortName', SortOrder: 'Ascending', StartIndex: String(startIndex), Limit: String(pageSize),
     })
     const response = await jellyfinJson(server, credential, `/Items?${query}`, {}, 30000, 2)
     if (!response.ok) throw new Error(response.status === 401 ? 'Your Jellyfin session has expired. Reconnect the server.' : `Jellyfin returned ${response.status} while loading music.`)
-    const page = response.data
-    const pageItems = Array.isArray(page.Items) ? page.Items : []
-    items.push(...pageItems)
-    const total = Number(page.TotalRecordCount || items.length)
+    return response.data
+  }
+  const firstPage = await loadPage(0)
+  const firstItems = Array.isArray(firstPage.Items) ? firstPage.Items : []
+  items.push(...firstItems)
+  const total = Number(firstPage.TotalRecordCount || firstItems.length)
+  sendJellyfinProgress(`Loaded ${items.length.toLocaleString()} of ${total.toLocaleString()} songs`, items.length, total)
+  for (let startIndex = pageSize; startIndex < total; startIndex += pageSize * 3) {
+    const starts = Array.from({ length: 3 }, (_, index) => startIndex + index * pageSize).filter((value) => value < total)
+    const pages = await Promise.all(starts.map((value) => loadPage(value)))
+    for (const page of pages) items.push(...(Array.isArray(page.Items) ? page.Items : []))
     sendJellyfinProgress(`Loaded ${items.length.toLocaleString()} of ${total.toLocaleString()} songs`, items.length, total)
-    if (pageItems.length < pageSize || items.length >= Number(page.TotalRecordCount || 0)) break
   }
   sendJellyfinProgress('Saving Jellyfin library...', items.length, items.length)
   const remoteTracks = items.map((item) => jellyfinTrack(server, item, existing.get(item.Id)))
@@ -734,6 +740,7 @@ async function jellyfinLyrics(lyricPath) {
 }
 
 async function jellyfinResponse(request) {
+  const upstreamController = new AbortController()
   try {
     const url = new URL(request.url)
     const [, kind, encodedServerId, encodedItemId, encodedFallbackId] = url.pathname.split('/')
@@ -758,19 +765,35 @@ async function jellyfinResponse(request) {
     const headers = {}
     const range = request.headers.get('range')
     if (range) headers.Range = range
-    let upstream = await jellyfinFetch(server, credential, endpoint, { headers }, 0)
+    let upstream = await jellyfinFetch(server, credential, endpoint, { headers, signal: upstreamController.signal }, 0)
     if (kind === 'image' && !upstream.ok && fallbackId && fallbackId !== itemId) {
+      await upstream.body?.cancel()
       const maxWidth = Math.min(1200, Math.max(64, Number(url.searchParams.get('maxWidth')) || 1200))
       endpoint = `/Items/${encodeURIComponent(fallbackId)}/Images/Primary?maxWidth=${maxWidth}&quality=90`
-      upstream = await jellyfinFetch(server, credential, endpoint, { headers }, 0)
+      upstream = await jellyfinFetch(server, credential, endpoint, { headers, signal: upstreamController.signal }, 0)
     }
     const responseHeaders = new Headers()
     for (const name of ['accept-ranges', 'cache-control', 'content-length', 'content-range', 'content-type', 'etag', 'last-modified']) {
       const value = upstream.headers.get(name)
       if (value) responseHeaders.set(name, value)
     }
-    return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders })
+    const reader = upstream.body?.getReader()
+    const body = reader ? new ReadableStream({
+      async pull(controller) {
+        try {
+          const chunk = await reader.read()
+          if (chunk.done) controller.close()
+          else controller.enqueue(chunk.value)
+        } catch (error) { controller.error(error) }
+      },
+      async cancel(reason) {
+        upstreamController.abort()
+        try { await reader.cancel(reason) } catch { /* The aborted fetch may already have closed its reader. */ }
+      },
+    }) : null
+    return new Response(body, { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders })
   } catch (error) {
+    upstreamController.abort()
     console.warn('Jellyfin resource request failed:', error instanceof Error ? error.message : error)
     return new Response('Jellyfin resource unavailable', { status: 502 })
   }
