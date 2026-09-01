@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.10 - 2026-09-01
+
+- Added visible Jellyfin connection and library-sync progress.
+- Added a full-response timeout so stalled metadata bodies return an actionable error.
+- Reduced Jellyfin sync page size to improve progress on slower remote servers.
+- Preserved authenticated server connections when the initial library sync needs to be retried.
+- Switched playback to finite, byte-range-capable Jellyfin streams to prevent memory exhaustion from open-ended transcodes.
+- Added compact Jellyfin artwork thumbnails for song lists to keep large remote libraries within stable memory bounds.
+- Shared one cached server-access snapshot across remote media requests instead of reparsing the complete library for every cover.
+
 ## 1.0.9 - 2026-09-01
 
 - Kept Settings accessible before any music source has been added.

@@ -138,10 +138,11 @@ function SortControl<T extends string>({ value, options, onChange }: { value: T;
 
 function Artwork({ track, size = 'medium' }: { track?: Track; size?: 'small' | 'medium' | 'large' }) {
   const color = track ? artColors[Math.abs(track.album.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)) % artColors.length] : artColors[1]
+  const artwork = track?.artwork?.startsWith('polaris://jellyfin/') && size === 'small' ? `${track.artwork}?maxWidth=128` : track?.artwork
   return (
     <div className={`artwork artwork--${size}`} style={{ '--art-color': color } as React.CSSProperties}>
       <Disc3 aria-hidden="true" />
-      {track?.artwork && <img src={track.artwork} alt={`${track.album} cover`} onError={(event) => { event.currentTarget.style.display = 'none' }} />}
+      {artwork && <img src={artwork} alt={`${track?.album} cover`} onError={(event) => { event.currentTarget.style.display = 'none' }} />}
     </div>
   )
 }
@@ -856,24 +857,28 @@ function JellyfinSettings({ library, onLibraryChange }: { library: Library; onLi
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
+  const [progress, setProgress] = useState('')
+  useEffect(() => window.polaris?.onJellyfinProgress((next) => setProgress(next.message)), [])
   const message = (reason: unknown) => reason instanceof Error ? reason.message.replace(/^Error invoking remote method '[^']+': Error: /, '') : 'Jellyfin could not complete that request.'
   const connect = async (event: React.FormEvent) => {
     event.preventDefault()
     setBusy('connect')
     setError('')
+    setProgress('Preparing connection...')
     try {
       const next = await window.polaris?.connectJellyfin({ url, username, password })
       if (next) onLibraryChange(next)
       setPassword('')
     } catch (reason) { setError(message(reason)) }
-    finally { setBusy('') }
+    finally { setBusy(''); setProgress('') }
   }
   const refresh = async (serverId: string) => {
     setBusy(serverId)
     setError('')
+    setProgress('Preparing refresh...')
     try { const next = await window.polaris?.refreshJellyfin(serverId); if (next) onLibraryChange(next) }
     catch (reason) { setError(message(reason)) }
-    finally { setBusy('') }
+    finally { setBusy(''); setProgress('') }
   }
   const disconnect = async (serverId: string) => {
     setBusy(serverId)
@@ -882,13 +887,13 @@ function JellyfinSettings({ library, onLibraryChange }: { library: Library; onLi
     catch (reason) { setError(message(reason)) }
     finally { setBusy('') }
   }
-  return <div className="settings-group settings-group--jellyfin"><div className="settings-group-title"><Cloud /><span><h2>Jellyfin servers</h2><small>Stream your music from home or across the internet</small></span></div>{library.jellyfinServers.length > 0 && <div className="source-list">{library.jellyfinServers.map((server) => { const trackCount = library.tracks.filter((track) => track.sourceId === server.id).length; return <div className="source-item jellyfin-source" key={server.id}><Cloud /><span><strong>{server.name}</strong><small>{server.username} · {trackCount.toLocaleString()} songs · {server.url}</small></span><IconButton label={`Refresh ${server.name}`} disabled={Boolean(busy)} onClick={() => refresh(server.id)}><RefreshCw className={busy === server.id ? 'spin' : ''} /></IconButton><IconButton label={`Disconnect ${server.name}`} disabled={Boolean(busy)} onClick={() => disconnect(server.id)}><Trash2 /></IconButton></div> })}</div>}<form className="jellyfin-form" onSubmit={connect}><label><span>Server URL</span><input type="text" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://music.example.com" autoComplete="url" required /></label><label><span>Username</span><input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label><label><span>Password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label><button className="secondary-button" disabled={Boolean(busy)} type="submit">{busy === 'connect' ? <RefreshCw className="spin" /> : <Cloud />}Connect</button></form>{error && <p className="jellyfin-error" role="alert">{error}</p>}<p className="background-scan-note">Use trusted HTTPS for servers available on the internet. Passwords are never saved; the access token is encrypted by Windows.</p></div>
+  return <div className="settings-group settings-group--jellyfin"><div className="settings-group-title"><Cloud /><span><h2>Jellyfin servers</h2><small>Stream your music from home or across the internet</small></span></div>{library.jellyfinServers.length > 0 && <div className="source-list">{library.jellyfinServers.map((server) => { const trackCount = library.tracks.filter((track) => track.sourceId === server.id).length; return <div className="source-item jellyfin-source" key={server.id}><Cloud /><span><strong>{server.name}</strong><small>{server.username} · {trackCount.toLocaleString()} songs · {server.url}</small></span><IconButton label={`Refresh ${server.name}`} disabled={Boolean(busy)} onClick={() => refresh(server.id)}><RefreshCw className={busy === server.id ? 'spin' : ''} /></IconButton><IconButton label={`Disconnect ${server.name}`} disabled={Boolean(busy)} onClick={() => disconnect(server.id)}><Trash2 /></IconButton></div> })}</div>}<form className="jellyfin-form" onSubmit={connect}><label><span>Server URL</span><input type="text" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://music.example.com" autoComplete="url" required /></label><label><span>Username</span><input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label><label><span>Password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label><button className="secondary-button" disabled={Boolean(busy)} type="submit">{busy === 'connect' ? <RefreshCw className="spin" /> : <Cloud />}Connect</button></form>{progress && <p className="jellyfin-progress" role="status"><RefreshCw className="spin" />{progress}</p>}{error && <p className="jellyfin-error" role="alert">{error}</p>}<p className="background-scan-note">Use trusted HTTPS for servers available on the internet. Passwords are never saved; the access token is encrypted by Windows.</p></div>
 }
 
 interface SettingsPageProps { library: Library; updateInfo: UpdateInfo | null; checkingForUpdates: boolean; onAddSource: () => void; onRemoveSource: (folder: string) => void; onRescan: () => void; onLibraryChange: (library: Library) => void; onUpdateSettings: (settings: Partial<Settings>) => void; onCheckForUpdates: () => Promise<void> }
 
 function SettingsBase({ library, updateInfo, checkingForUpdates, onAddSource, onRemoveSource, onRescan, onUpdateSettings, onCheckForUpdates }: SettingsPageProps) {
-  const currentVersion = updateInfo?.currentVersion || '1.0.9'
+  const currentVersion = updateInfo?.currentVersion || '1.0.10'
   const updateStatus = updateInfo?.available ? `Polaris ${updateInfo.latestVersion} is ready to download.` : updateInfo?.error ? 'Could not reach GitHub. Check your connection and try again.' : updateInfo ? `Polaris ${currentVersion} is up to date.` : 'Checking GitHub Releases.'
   return (
     <section className="settings-page">
@@ -925,8 +930,8 @@ function SettingsBase({ library, updateInfo, checkingForUpdates, onAddSource, on
         </div>
         <div className="settings-group settings-group--release">
           <div className="release-copy">
-            <div className="settings-group-title"><ScrollText /><span><h2>What's new in 1.0.9</h2><small>Released through GitHub</small></span></div>
-            <ul><li>Folder and Jellyfin choices in the source menu</li><li>Jellyfin setup before adding local music</li><li>Source counts for local and remote libraries</li></ul>
+            <div className="settings-group-title"><ScrollText /><span><h2>What's new in 1.0.10</h2><small>Released through GitHub</small></span></div>
+            <ul><li>Visible Jellyfin connection and sync progress</li><li>Bounded metadata response times</li><li>Reliable retry after an interrupted first sync</li></ul>
           </div>
           <div className="update-settings"><span className={updateInfo?.available ? 'release-status release-status--available' : 'release-status'}>{updateStatus}</span><div>{updateInfo?.available && <button className="primary-button" onClick={() => window.polaris?.openExternal(updateInfo.downloadUrl)}><Download />Get version {updateInfo.latestVersion}</button>}<button className="secondary-button" disabled={checkingForUpdates} onClick={onCheckForUpdates}><RefreshCw className={checkingForUpdates ? 'spin' : ''} />{checkingForUpdates ? 'Checking' : 'Check for updates'}</button></div></div>
         </div>

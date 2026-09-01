@@ -77,6 +77,7 @@ export interface Library {
 
 export interface LyricLine { time: number | null; text: string }
 export interface ScanProgress { current: number; total: number }
+export interface JellyfinProgress { message: string; current: number; total: number }
 export interface ArtistLink { label: string; url: string }
 export interface PopularRecording { title: string; listens: number; listeners: number }
 export interface ArtistImages { profile: string; background: string; biography?: string; genres?: string[]; links?: ArtistLink[]; topRecordings?: PopularRecording[]; rankingVersion?: number; requestedArtist?: string; resolvedArtist?: string; cachedAt?: number }
@@ -98,6 +99,7 @@ declare global {
       openExternal: (url: string) => Promise<boolean>
       checkForUpdates: () => Promise<UpdateInfo>
       onScanProgress: (callback: (progress: ScanProgress) => void) => () => void
+      onJellyfinProgress: (callback: (progress: JellyfinProgress) => void) => () => void
       onLibraryUpdated: (callback: (library: Library) => void) => () => void
     }
   }

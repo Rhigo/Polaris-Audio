@@ -23,6 +23,7 @@ let libraryWatchers = []
 let watchTimer
 let watchPoll
 let cacheWriteQueue = Promise.resolve()
+let jellyfinAccessPromise
 const artistImageRequests = new Map()
 let musicBrainzQueue = Promise.resolve()
 let lastMusicBrainzRequest = 0
@@ -212,6 +213,22 @@ async function writeJellyfinCredentials(credentials) {
   await fs.writeFile(jellyfinCredentialsPath(), JSON.stringify(credentials), { encoding: 'utf8', mode: 0o600 })
 }
 
+function resetJellyfinAccess() {
+  jellyfinAccessPromise = undefined
+}
+
+async function jellyfinAccess(serverId) {
+  if (!jellyfinAccessPromise) {
+    jellyfinAccessPromise = Promise.all([readCache(), readJellyfinCredentials()]).then(([library, credentials]) => new Map(
+      library.jellyfinServers.map((server) => [server.id, { server, credential: credentials[server.id] }]),
+    )).catch((error) => {
+      jellyfinAccessPromise = undefined
+      throw error
+    })
+  }
+  return (await jellyfinAccessPromise).get(serverId)
+}
+
 function encryptJellyfinToken(token) {
   if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure credential storage is unavailable on this computer.')
   return safeStorage.encryptString(token).toString('base64')
@@ -231,6 +248,28 @@ async function jellyfinFetch(server, credential, endpoint, options = {}, timeout
   if (timeout) requestOptions.signal = AbortSignal.timeout(timeout)
   return net.fetch(`${server.url}${endpoint}`, requestOptions)
 }
+
+async function jellyfinJson(server, credential, endpoint, options = {}, timeout = 30000) {
+  const controller = new AbortController()
+  let timeoutId
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort()
+      reject(new Error('Jellyfin took too long to respond. Check the server, then try Refresh.'))
+    }, timeout)
+  })
+  const request = (async () => {
+    const response = await jellyfinFetch(server, credential, endpoint, { ...options, signal: controller.signal }, 0)
+    const text = await response.text()
+    let data = {}
+    try { data = text ? JSON.parse(text) : {} } catch { /* Error responses may be plain text. */ }
+    return { ok: response.ok, status: response.status, data }
+  })()
+  try { return await Promise.race([request, timeoutPromise]) }
+  finally { clearTimeout(timeoutId) }
+}
+
+const sendJellyfinProgress = (message, current = 0, total = 0) => mainWindow?.webContents.send('jellyfin:progress', { message, current, total })
 
 const jellyfinAudioUrl = (serverId, itemId) => `polaris://jellyfin/audio/${encodeURIComponent(serverId)}/${encodeURIComponent(itemId)}`
 const jellyfinArtworkUrl = (serverId, itemId) => `polaris://jellyfin/image/${encodeURIComponent(serverId)}/${encodeURIComponent(itemId)}`
@@ -263,19 +302,23 @@ async function syncJellyfinServer(serverId) {
   if (!server || !credential) throw new Error('Reconnect this Jellyfin server before refreshing it.')
   const existing = new Map(library.tracks.filter((track) => track.sourceType === 'jellyfin' && track.sourceId === serverId).map((track) => [track.remoteId, track]))
   const items = []
-  const pageSize = 500
+  const pageSize = 200
+  sendJellyfinProgress('Loading music from Jellyfin...')
   for (let startIndex = 0; ; startIndex += pageSize) {
     const query = new URLSearchParams({
       UserId: server.userId, Recursive: 'true', IncludeItemTypes: 'Audio', Fields: 'Genres,DateCreated,MediaSources,MediaStreams,PrimaryImageAspectRatio',
       EnableImages: 'true', ImageTypeLimit: '1', SortBy: 'SortName', SortOrder: 'Ascending', StartIndex: String(startIndex), Limit: String(pageSize),
     })
-    const response = await jellyfinFetch(server, credential, `/Items?${query}`)
+    const response = await jellyfinJson(server, credential, `/Items?${query}`)
     if (!response.ok) throw new Error(response.status === 401 ? 'Your Jellyfin session has expired. Reconnect the server.' : `Jellyfin returned ${response.status} while loading music.`)
-    const page = await response.json()
+    const page = response.data
     const pageItems = Array.isArray(page.Items) ? page.Items : []
     items.push(...pageItems)
+    const total = Number(page.TotalRecordCount || items.length)
+    sendJellyfinProgress(`Loaded ${items.length.toLocaleString()} of ${total.toLocaleString()} songs`, items.length, total)
     if (pageItems.length < pageSize || items.length >= Number(page.TotalRecordCount || 0)) break
   }
+  sendJellyfinProgress('Saving Jellyfin library...', items.length, items.length)
   const remoteTracks = items.map((item) => jellyfinTrack(server, item, existing.get(item.Id)))
   const syncedAt = Date.now()
   const next = await updateCache((latest) => ({
@@ -291,26 +334,30 @@ async function connectJellyfin({ url, username, password } = {}) {
   const serverUrl = normalizeJellyfinUrl(url)
   const deviceId = randomUUID()
   const server = { url: serverUrl }
-  const publicResponse = await jellyfinFetch(server, { deviceId }, '/System/Info/Public')
+  sendJellyfinProgress('Contacting Jellyfin server...')
+  const publicResponse = await jellyfinJson(server, { deviceId }, '/System/Info/Public')
   if (!publicResponse.ok) throw new Error(`Could not identify a Jellyfin server at this URL (${publicResponse.status}).`)
-  const publicInfo = await publicResponse.json()
-  const authResponse = await jellyfinFetch(server, { deviceId }, '/Users/AuthenticateByName', {
+  const publicInfo = publicResponse.data
+  sendJellyfinProgress('Signing in to Jellyfin...')
+  const authResponse = await jellyfinJson(server, { deviceId }, '/Users/AuthenticateByName', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ Username: String(username || '').trim(), Pw: String(password || '') }),
   })
   if (!authResponse.ok) throw new Error(authResponse.status === 401 ? 'Jellyfin rejected that username or password.' : `Jellyfin sign-in failed (${authResponse.status}).`)
-  const authentication = await authResponse.json()
+  const authentication = authResponse.data
   if (!authentication.AccessToken || !authentication.User?.Id) throw new Error('Jellyfin returned an incomplete sign-in response.')
   const id = createHash('sha1').update(`${serverUrl}\0${authentication.User.Id}`).digest('hex')
   const credentials = await readJellyfinCredentials()
   credentials[id] = { deviceId, encryptedToken: encryptJellyfinToken(authentication.AccessToken) }
   await writeJellyfinCredentials(credentials)
-  await updateCache((library) => ({
+  const connectedLibrary = await updateCache((library) => ({
     ...library,
     jellyfinServers: [...library.jellyfinServers.filter((candidate) => candidate.id !== id), {
       id, url: serverUrl, name: publicInfo.ServerName || new URL(serverUrl).hostname,
       username: authentication.User.Name || String(username || '').trim(), userId: authentication.User.Id, lastSyncedAt: 0,
     }],
   }))
+  resetJellyfinAccess()
+  mainWindow?.webContents.send('library:updated', connectedLibrary)
   return syncJellyfinServer(id)
 }
 
@@ -328,6 +375,7 @@ async function disconnectJellyfin(serverId) {
       playlists: library.playlists.map((playlist) => ({ ...playlist, trackIds: playlist.trackIds.filter((id) => liveIds.has(id)) })),
     }
   })
+  resetJellyfinAccess()
   mainWindow?.webContents.send('library:updated', next)
   return next
 }
@@ -654,19 +702,19 @@ async function jellyfinResponse(request) {
     const [, kind, encodedServerId, encodedItemId] = url.pathname.split('/')
     const serverId = decodeURIComponent(encodedServerId || '')
     const itemId = decodeURIComponent(encodedItemId || '')
-    const [library, credentials] = await Promise.all([readCache(), readJellyfinCredentials()])
-    const server = library.jellyfinServers.find((candidate) => candidate.id === serverId)
-    const credential = credentials[serverId]
+    const access = await jellyfinAccess(serverId)
+    const server = access?.server
+    const credential = access?.credential
     if (!server || !credential || !itemId) return new Response('Jellyfin source not found', { status: 404 })
     let endpoint
     if (kind === 'audio') {
       const query = new URLSearchParams({
-        UserId: server.userId, DeviceId: credential.deviceId, AudioCodec: 'mp3', Container: 'mp3',
-        TranscodingContainer: 'mp3', TranscodingProtocol: 'http', MaxStreamingBitrate: '320000', EnableRedirection: 'false',
+        UserId: server.userId, DeviceId: credential.deviceId, Static: 'true',
       })
-      endpoint = `/Audio/${encodeURIComponent(itemId)}/universal?${query}`
+      endpoint = `/Audio/${encodeURIComponent(itemId)}/stream?${query}`
     } else if (kind === 'image') {
-      endpoint = `/Items/${encodeURIComponent(itemId)}/Images/Primary?maxWidth=1200&quality=90`
+      const maxWidth = Math.min(1200, Math.max(64, Number(url.searchParams.get('maxWidth')) || 1200))
+      endpoint = `/Items/${encodeURIComponent(itemId)}/Images/Primary?maxWidth=${maxWidth}&quality=90`
     } else return new Response('Unsupported Jellyfin resource', { status: 404 })
     const headers = {}
     const range = request.headers.get('range')
