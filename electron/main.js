@@ -1,5 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
-import { createHash } from 'node:crypto'
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, safeStorage, shell } from 'electron'
+import { createHash, randomUUID } from 'node:crypto'
 import { promises as fs, watch } from 'node:fs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
@@ -130,6 +130,7 @@ protocol.registerSchemesAsPrivileged([
 const cachePath = () => path.join(app.getPath('userData'), 'library.json')
 const artistCachePath = () => path.join(app.getPath('userData'), 'artist-images.json')
 const lyricsCachePath = () => path.join(app.getPath('userData'), 'online-lyrics.json')
+const jellyfinCredentialsPath = () => path.join(app.getPath('userData'), 'jellyfin-credentials.json')
 const artworkPath = () => path.join(app.getPath('userData'), 'artwork')
 const mediaUrl = (filePath) => `polaris://media/${Buffer.from(filePath).toString('base64url')}`
 const defaultSettings = {
@@ -144,11 +145,16 @@ function normalizeLibrary(value = {}) {
   if (!accentColors.has(settings.accentColor)) settings.accentColor = defaultSettings.accentColor
   const legacyFolder = typeof value.folder === 'string' ? value.folder : ''
   const folders = [...new Set((Array.isArray(value.folders) ? value.folders : [legacyFolder]).filter((folder) => typeof folder === 'string' && folder.trim()).map((folder) => path.resolve(folder)))]
+  const jellyfinServers = (Array.isArray(value.jellyfinServers) ? value.jellyfinServers : []).filter((server) => server && typeof server.id === 'string' && typeof server.url === 'string').map((server) => ({
+    id: server.id, url: server.url, name: typeof server.name === 'string' ? server.name : server.url,
+    username: typeof server.username === 'string' ? server.username : '', userId: typeof server.userId === 'string' ? server.userId : '',
+    lastSyncedAt: Number(server.lastSyncedAt) || 0,
+  }))
   return {
     folders, folder: folders[0] || '', tracks: Array.isArray(value.tracks) ? value.tracks : [],
     history: Array.isArray(value.history) ? value.history : [], favorites: Array.isArray(value.favorites) ? value.favorites : [],
     liked: Array.isArray(value.liked) ? value.liked : [], disliked: Array.isArray(value.disliked) ? value.disliked : [],
-    playlists: Array.isArray(value.playlists) ? value.playlists : [], settings,
+    playlists: Array.isArray(value.playlists) ? value.playlists : [], jellyfinServers, settings,
   }
 }
 
@@ -175,6 +181,155 @@ function updateCache(update) {
   })
   cacheWriteQueue = operation.then(() => undefined, () => undefined)
   return operation
+}
+
+function normalizeJellyfinUrl(value) {
+  const input = String(value || '').trim()
+  if (!input) throw new Error('Enter your Jellyfin server URL.')
+  const localAddress = /^(?:localhost|127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|[^.]+(?::\d+)?$)/i.test(input)
+  const withProtocol = /^[a-z][a-z\d+.-]*:\/\//i.test(input) ? input : `${localAddress ? 'http' : 'https'}://${input}`
+  let url
+  try { url = new URL(withProtocol) } catch { throw new Error('Enter a valid Jellyfin server URL.') }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Jellyfin URLs must use HTTP or HTTPS without embedded credentials.')
+  url.search = ''
+  url.hash = ''
+  return url.href.replace(/\/$/, '')
+}
+
+const jellyfinHeaderValue = (value) => String(value || '').replace(/["\\]/g, '')
+const jellyfinAuthorization = (deviceId, token = '') => {
+  const fields = [`MediaBrowser Client="Polaris"`, `Device="Windows Desktop"`, `DeviceId="${jellyfinHeaderValue(deviceId)}"`, `Version="${jellyfinHeaderValue(app.getVersion())}"`]
+  if (token) fields.push(`Token="${jellyfinHeaderValue(token)}"`)
+  return fields.join(', ')
+}
+
+async function readJellyfinCredentials() {
+  try { return JSON.parse(await fs.readFile(jellyfinCredentialsPath(), 'utf8')) }
+  catch { return {} }
+}
+
+async function writeJellyfinCredentials(credentials) {
+  await fs.writeFile(jellyfinCredentialsPath(), JSON.stringify(credentials), { encoding: 'utf8', mode: 0o600 })
+}
+
+function encryptJellyfinToken(token) {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure credential storage is unavailable on this computer.')
+  return safeStorage.encryptString(token).toString('base64')
+}
+
+function decryptJellyfinToken(value) {
+  if (!value || !safeStorage.isEncryptionAvailable()) throw new Error('Reconnect this Jellyfin server to restore secure access.')
+  return safeStorage.decryptString(Buffer.from(value, 'base64'))
+}
+
+async function jellyfinFetch(server, credential, endpoint, options = {}, timeout = 8000) {
+  const token = credential.encryptedToken ? decryptJellyfinToken(credential.encryptedToken) : ''
+  const headers = new Headers(options.headers || {})
+  headers.set('Accept', 'application/json')
+  headers.set('Authorization', jellyfinAuthorization(credential.deviceId, token))
+  const requestOptions = { ...options, headers }
+  if (timeout) requestOptions.signal = AbortSignal.timeout(timeout)
+  return net.fetch(`${server.url}${endpoint}`, requestOptions)
+}
+
+const jellyfinAudioUrl = (serverId, itemId) => `polaris://jellyfin/audio/${encodeURIComponent(serverId)}/${encodeURIComponent(itemId)}`
+const jellyfinArtworkUrl = (serverId, itemId) => `polaris://jellyfin/image/${encodeURIComponent(serverId)}/${encodeURIComponent(itemId)}`
+
+function jellyfinTrack(server, item, previous) {
+  const mediaSource = item.MediaSources?.[0] || {}
+  const audioStream = mediaSource.MediaStreams?.find((stream) => stream.Type === 'Audio') || item.MediaStreams?.find((stream) => stream.Type === 'Audio') || {}
+  const container = String(mediaSource.Container || item.Container || '').toLowerCase()
+  const albumArtist = item.AlbumArtist || item.AlbumArtists?.[0]?.Name || item.Artists?.[0] || 'Unknown Artist'
+  const artist = item.Artists?.[0] || albumArtist
+  const imageItemId = item.PrimaryImageItemId || item.AlbumId || item.Id
+  const hasArtwork = Boolean(item.ImageTags?.Primary || item.PrimaryImageTag || item.PrimaryImageItemId || item.AlbumId)
+  return {
+    id: `jellyfin:${server.id}:${item.Id}`, path: `jellyfin://${server.id}/${item.Id}`, url: jellyfinAudioUrl(server.id, item.Id),
+    title: item.Name || 'Unknown Title', artist, albumArtist, album: item.Album || 'Unknown Album',
+    year: Number(item.ProductionYear) || 0, track: Number(item.IndexNumber) || 0, disc: Number(item.ParentIndexNumber) || 1,
+    genre: item.Genres?.[0] || '', duration: Number(item.RunTimeTicks) / 10000000 || 0,
+    sampleRate: Number(audioStream.SampleRate) || 0, bitDepth: Number(audioStream.BitDepth) || 0,
+    lossless: ['flac', 'alac', 'wav', 'ape'].some((format) => container.split(',').includes(format)),
+    artwork: hasArtwork ? jellyfinArtworkUrl(server.id, imageItemId) : '', lyricPath: '', embeddedLyrics: '',
+    addedAt: previous?.addedAt || Date.parse(item.DateCreated || '') || Date.now(), fileSize: Number(mediaSource.Size) || undefined,
+    sourceType: 'jellyfin', sourceId: server.id, remoteId: item.Id,
+  }
+}
+
+async function syncJellyfinServer(serverId) {
+  const [library, credentials] = await Promise.all([readCache(), readJellyfinCredentials()])
+  const server = library.jellyfinServers.find((candidate) => candidate.id === serverId)
+  const credential = credentials[serverId]
+  if (!server || !credential) throw new Error('Reconnect this Jellyfin server before refreshing it.')
+  const existing = new Map(library.tracks.filter((track) => track.sourceType === 'jellyfin' && track.sourceId === serverId).map((track) => [track.remoteId, track]))
+  const items = []
+  const pageSize = 500
+  for (let startIndex = 0; ; startIndex += pageSize) {
+    const query = new URLSearchParams({
+      UserId: server.userId, Recursive: 'true', IncludeItemTypes: 'Audio', Fields: 'Genres,DateCreated,MediaSources,MediaStreams,PrimaryImageAspectRatio',
+      EnableImages: 'true', ImageTypeLimit: '1', SortBy: 'SortName', SortOrder: 'Ascending', StartIndex: String(startIndex), Limit: String(pageSize),
+    })
+    const response = await jellyfinFetch(server, credential, `/Items?${query}`)
+    if (!response.ok) throw new Error(response.status === 401 ? 'Your Jellyfin session has expired. Reconnect the server.' : `Jellyfin returned ${response.status} while loading music.`)
+    const page = await response.json()
+    const pageItems = Array.isArray(page.Items) ? page.Items : []
+    items.push(...pageItems)
+    if (pageItems.length < pageSize || items.length >= Number(page.TotalRecordCount || 0)) break
+  }
+  const remoteTracks = items.map((item) => jellyfinTrack(server, item, existing.get(item.Id)))
+  const syncedAt = Date.now()
+  const next = await updateCache((latest) => ({
+    ...latest,
+    tracks: [...latest.tracks.filter((track) => track.sourceType !== 'jellyfin' || track.sourceId !== serverId), ...remoteTracks],
+    jellyfinServers: latest.jellyfinServers.map((candidate) => candidate.id === serverId ? { ...candidate, lastSyncedAt: syncedAt } : candidate),
+  }))
+  mainWindow?.webContents.send('library:updated', next)
+  return next
+}
+
+async function connectJellyfin({ url, username, password } = {}) {
+  const serverUrl = normalizeJellyfinUrl(url)
+  const deviceId = randomUUID()
+  const server = { url: serverUrl }
+  const publicResponse = await jellyfinFetch(server, { deviceId }, '/System/Info/Public')
+  if (!publicResponse.ok) throw new Error(`Could not identify a Jellyfin server at this URL (${publicResponse.status}).`)
+  const publicInfo = await publicResponse.json()
+  const authResponse = await jellyfinFetch(server, { deviceId }, '/Users/AuthenticateByName', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ Username: String(username || '').trim(), Pw: String(password || '') }),
+  })
+  if (!authResponse.ok) throw new Error(authResponse.status === 401 ? 'Jellyfin rejected that username or password.' : `Jellyfin sign-in failed (${authResponse.status}).`)
+  const authentication = await authResponse.json()
+  if (!authentication.AccessToken || !authentication.User?.Id) throw new Error('Jellyfin returned an incomplete sign-in response.')
+  const id = createHash('sha1').update(`${serverUrl}\0${authentication.User.Id}`).digest('hex')
+  const credentials = await readJellyfinCredentials()
+  credentials[id] = { deviceId, encryptedToken: encryptJellyfinToken(authentication.AccessToken) }
+  await writeJellyfinCredentials(credentials)
+  await updateCache((library) => ({
+    ...library,
+    jellyfinServers: [...library.jellyfinServers.filter((candidate) => candidate.id !== id), {
+      id, url: serverUrl, name: publicInfo.ServerName || new URL(serverUrl).hostname,
+      username: authentication.User.Name || String(username || '').trim(), userId: authentication.User.Id, lastSyncedAt: 0,
+    }],
+  }))
+  return syncJellyfinServer(id)
+}
+
+async function disconnectJellyfin(serverId) {
+  const credentials = await readJellyfinCredentials()
+  delete credentials[serverId]
+  await writeJellyfinCredentials(credentials)
+  const next = await updateCache((library) => {
+    const tracks = library.tracks.filter((track) => track.sourceType !== 'jellyfin' || track.sourceId !== serverId)
+    const liveIds = new Set(tracks.map((track) => track.id))
+    return {
+      ...library, tracks, jellyfinServers: library.jellyfinServers.filter((server) => server.id !== serverId),
+      history: library.history.filter((id) => liveIds.has(id)), favorites: library.favorites.filter((id) => liveIds.has(id)),
+      liked: library.liked.filter((id) => liveIds.has(id)), disliked: library.disliked.filter((id) => liveIds.has(id)),
+      playlists: library.playlists.map((playlist) => ({ ...playlist, trackIds: playlist.trackIds.filter((id) => liveIds.has(id)) })),
+    }
+  })
+  mainWindow?.webContents.send('library:updated', next)
+  return next
 }
 
 async function discoverFiles(root) {
@@ -389,14 +544,15 @@ async function scanLibrary(sourceFolders, { foreground = false } = {}) {
   await Promise.all(Array.from({ length: metadataWorkers }, worker))
   const scannedPaths = new Set(files.map(pathKey))
   const preservedTracks = previous.tracks.filter((track) => !scannedPaths.has(pathKey(track.path)) && unavailableDirectories.some((directory) => isWithin(directory, track.path)))
-  const liveTracks = [...tracks.filter(Boolean), ...preservedTracks]
+  const remoteTracks = previous.tracks.filter((track) => track.sourceType === 'jellyfin')
+  const liveTracks = [...tracks.filter(Boolean), ...preservedTracks, ...remoteTracks]
   const liveIds = new Set(liveTracks.map((track) => track.id))
   const library = await updateCache((latest) => ({
     folders, folder: folders[0] || '', tracks: liveTracks,
     history: latest.history.filter((id) => liveIds.has(id)), favorites: latest.favorites.filter((id) => liveIds.has(id)),
     liked: latest.liked.filter((id) => liveIds.has(id)), disliked: latest.disliked.filter((id) => liveIds.has(id)),
     playlists: latest.playlists.map((playlist) => ({ ...playlist, trackIds: playlist.trackIds.filter((id) => liveIds.has(id)) })),
-    settings: latest.settings,
+    jellyfinServers: latest.jellyfinServers, settings: latest.settings,
   }))
   libraryRoots = folders
   return library
@@ -492,6 +648,44 @@ async function onlineLyrics(track) {
   return request
 }
 
+async function jellyfinResponse(request) {
+  try {
+    const url = new URL(request.url)
+    const [, kind, encodedServerId, encodedItemId] = url.pathname.split('/')
+    const serverId = decodeURIComponent(encodedServerId || '')
+    const itemId = decodeURIComponent(encodedItemId || '')
+    const [library, credentials] = await Promise.all([readCache(), readJellyfinCredentials()])
+    const server = library.jellyfinServers.find((candidate) => candidate.id === serverId)
+    const credential = credentials[serverId]
+    if (!server || !credential || !itemId) return new Response('Jellyfin source not found', { status: 404 })
+    let endpoint
+    if (kind === 'audio') {
+      const query = new URLSearchParams({
+        UserId: server.userId, DeviceId: credential.deviceId, AudioCodec: 'mp3', Container: 'mp3',
+        TranscodingContainer: 'mp3', TranscodingProtocol: 'http', MaxStreamingBitrate: '320000', EnableRedirection: 'false',
+      })
+      endpoint = `/Audio/${encodeURIComponent(itemId)}/universal?${query}`
+    } else if (kind === 'image') {
+      endpoint = `/Items/${encodeURIComponent(itemId)}/Images/Primary?maxWidth=1200&quality=90`
+    } else return new Response('Unsupported Jellyfin resource', { status: 404 })
+    const headers = {}
+    const range = request.headers.get('range')
+    if (range) headers.Range = range
+    const upstream = await jellyfinFetch(server, credential, endpoint, { headers }, 0)
+    const responseHeaders = new Headers()
+    for (const name of ['accept-ranges', 'cache-control', 'content-length', 'content-range', 'content-type', 'etag', 'last-modified']) {
+      const value = upstream.headers.get(name)
+      if (value) responseHeaders.set(name, value)
+    }
+    return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders })
+  } catch (error) {
+    console.warn('Jellyfin resource request failed:', error instanceof Error ? error.message : error)
+    return new Response('Jellyfin resource unavailable', { status: 502 })
+  }
+}
+
+const polarisResponse = (request) => new URL(request.url).hostname === 'jellyfin' ? jellyfinResponse(request) : mediaResponse(request)
+
 async function mediaResponse(request) {
   let filePath
   let stats
@@ -560,7 +754,7 @@ async function createWindow() {
 app.whenReady().then(async () => {
   const cachedLibrary = await readCache()
   watchLibraries(cachedLibrary.folders)
-  protocol.handle('polaris', mediaResponse)
+  protocol.handle('polaris', polarisResponse)
   ipcMain.handle('library:get', readCache)
   ipcMain.handle('library:add-source', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'], title: 'Add a music source' })
@@ -582,6 +776,9 @@ app.whenReady().then(async () => {
     const library = await readCache()
     return requestScan(library.folders, { foreground: true })
   })
+  ipcMain.handle('jellyfin:connect', (_, credentials) => connectJellyfin(credentials))
+  ipcMain.handle('jellyfin:refresh', (_, serverId) => syncJellyfinServer(serverId))
+  ipcMain.handle('jellyfin:disconnect', (_, serverId) => disconnectJellyfin(serverId))
   ipcMain.handle('library:save-state', async (_, state) => {
     const allowed = {}
     for (const key of ['history', 'favorites', 'liked', 'disliked', 'playlists', 'settings']) if (state && key in state) allowed[key] = state[key]

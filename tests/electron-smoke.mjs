@@ -5,12 +5,22 @@ import { createServer } from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 
-function createWave(seconds = 3, sampleRate = 44100) {
+function createWave(seconds = 3, sampleRate = 44100, metadata = {}) {
   const samples = seconds * sampleRate
   const dataSize = samples * 2
-  const buffer = Buffer.alloc(44 + dataSize)
+  const infoFields = [['INAM', metadata.title], ['IART', metadata.artist], ['IPRD', metadata.album], ['ICRD', metadata.year], ['IGNR', metadata.genre]].filter(([, value]) => value)
+  const infoChunks = infoFields.map(([name, value]) => {
+    const content = Buffer.from(`${value}\0`, 'utf8')
+    const chunk = Buffer.alloc(8 + content.length + content.length % 2)
+    chunk.write(name, 0)
+    chunk.writeUInt32LE(content.length, 4)
+    content.copy(chunk, 8)
+    return chunk
+  })
+  const listSize = infoChunks.length ? 4 + infoChunks.reduce((total, chunk) => total + chunk.length, 0) : 0
+  const buffer = Buffer.alloc(44 + dataSize + (listSize ? 8 + listSize : 0))
   buffer.write('RIFF', 0)
-  buffer.writeUInt32LE(36 + dataSize, 4)
+  buffer.writeUInt32LE(buffer.length - 8, 4)
   buffer.write('WAVEfmt ', 8)
   buffer.writeUInt32LE(16, 16)
   buffer.writeUInt16LE(1, 20)
@@ -24,12 +34,24 @@ function createWave(seconds = 3, sampleRate = 44100) {
   for (let index = 0; index < samples; index += 1) {
     buffer.writeInt16LE(Math.sin(2 * Math.PI * 440 * index / sampleRate) * 5000, 44 + index * 2)
   }
+  if (listSize) {
+    let offset = 44 + dataSize
+    buffer.write('LIST', offset)
+    buffer.writeUInt32LE(listSize, offset + 4)
+    buffer.write('INFO', offset + 8)
+    offset += 12
+    for (const chunk of infoChunks) { chunk.copy(buffer, offset); offset += chunk.length }
+  }
   return buffer
 }
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'polaris-smoke-'))
 let lyricsRequests = 0
 let updateRequests = 0
+let jellyfinItemRequests = 0
+let jellyfinAuthorizedRequests = 0
+const jellyfinAudio = createWave(2)
+const jellyfinArtwork = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
 const lyricsServer = createServer((request, response) => {
   lyricsRequests += 1
   if (new URL(request.url, 'http://localhost').searchParams.get('track_name') === 'Rate Limited') {
@@ -43,12 +65,52 @@ const lyricsServer = createServer((request, response) => {
 })
 await new Promise((resolve) => lyricsServer.listen(0, '127.0.0.1', resolve))
 const lyricsAddress = lyricsServer.address()
-const artistServer = createServer((request, response) => {
+const artistServer = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost')
+  if (url.pathname === '/System/Info/Public') {
+    response.setHeader('Content-Type', 'application/json')
+    return response.end(JSON.stringify({ Id: 'test-jellyfin', ServerName: 'Work Jellyfin', Version: '10.10.7' }))
+  }
+  if (url.pathname === '/Users/AuthenticateByName') {
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    const credentials = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    response.setHeader('Content-Type', 'application/json')
+    if (credentials.Username !== 'polaris' || credentials.Pw !== 'test-password') {
+      response.statusCode = 401
+      return response.end('{}')
+    }
+    return response.end(JSON.stringify({ AccessToken: 'raw-test-token', User: { Id: 'jellyfin-user', Name: 'polaris' } }))
+  }
+  if (url.pathname === '/Items') {
+    jellyfinItemRequests += 1
+    if (request.headers.authorization?.includes('Token="raw-test-token"')) jellyfinAuthorizedRequests += 1
+    else { response.statusCode = 401; return response.end('{}') }
+    response.setHeader('Content-Type', 'application/json')
+    return response.end(JSON.stringify({ TotalRecordCount: 1, Items: [{
+      Id: 'remote-track', Name: 'Remote Library Song', Album: 'Remote Album', AlbumId: 'remote-album',
+      AlbumArtist: 'Remote Artist', Artists: ['Remote Artist'], Genres: ['Remote'], ProductionYear: 2026,
+      IndexNumber: 3, ParentIndexNumber: 1, RunTimeTicks: 20000000, DateCreated: '2026-08-01T00:00:00Z',
+      ImageTags: { Primary: 'image-tag' }, MediaSources: [{ Container: 'flac', Size: 123456, MediaStreams: [{ Type: 'Audio', SampleRate: 48000, BitDepth: 24 }] }],
+    }] }))
+  }
+  if (url.pathname === '/Audio/remote-track/universal') {
+    if (request.headers.authorization?.includes('Token="raw-test-token"')) jellyfinAuthorizedRequests += 1
+    else { response.statusCode = 401; return response.end() }
+    response.setHeader('Content-Type', 'audio/wav')
+    response.setHeader('Content-Length', String(jellyfinAudio.length))
+    return response.end(jellyfinAudio)
+  }
+  if (url.pathname === '/Items/remote-album/Images/Primary') {
+    if (request.headers.authorization?.includes('Token="raw-test-token"')) jellyfinAuthorizedRequests += 1
+    else { response.statusCode = 401; return response.end() }
+    response.setHeader('Content-Type', 'image/png')
+    return response.end(jellyfinArtwork)
+  }
   response.setHeader('Content-Type', 'application/json')
   if (url.pathname === '/release') {
     updateRequests += 1
-    return response.end(JSON.stringify({ tag_name: 'v1.0.8', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.8', assets: [{ name: 'Polaris-1.0.8-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.8/Polaris-1.0.8-Portable.exe' }, { name: 'Polaris-1.0.8-Setup.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.8/Polaris-1.0.8-Setup.exe' }] }))
+    return response.end(JSON.stringify({ tag_name: 'v1.0.9', html_url: 'https://github.com/Rhigo/Polaris-Audio/releases/tag/v1.0.9', assets: [{ name: 'Polaris-1.0.9-Portable.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.9/Polaris-1.0.9-Portable.exe' }, { name: 'Polaris-1.0.9-Setup.exe', browser_download_url: 'https://github.com/Rhigo/Polaris-Audio/releases/download/v1.0.9/Polaris-1.0.9-Setup.exe' }] }))
   }
   if (url.pathname === '/audiodb') return response.end(JSON.stringify({ artists: [{ strArtist: 'Cold Play Tribute', strBiographyEN: 'Wrong artist.', strMusicBrainzID: 'wrong-mbid' }, { strArtist: 'Coldplay', strBiographyEN: 'A test biography.', strGenre: 'Alternative', strMusicBrainzID: 'test-mbid', strWebsite: 'coldplay.com', strTwitter: '0' }] }))
   if (url.pathname.includes('/artist/test-mbid')) return response.end(JSON.stringify({ relations: [{ url: { resource: 'https://instagram.com/coldplay' } }] }))
@@ -70,14 +132,15 @@ const trackPath = path.join(music, 'Polaris Test Tone.wav')
 const secondTrackPath = path.join(music, 'Skip Target.wav')
 const privatePath = path.join(root, 'not-in-library.txt')
 const secondaryTrackPath = path.join(secondMusic, 'Secondary Source.wav')
-await fs.writeFile(trackPath, createWave())
-await fs.writeFile(secondTrackPath, createWave())
+await fs.writeFile(trackPath, createWave(3, 44100, { title: 'Polaris Test Tone', artist: 'Coldplay', album: 'Playback Tests', year: '2026', genre: 'Test' }))
+await fs.writeFile(secondTrackPath, createWave(3, 44100, { title: 'Skip Target', artist: 'Coldplay', album: 'Skip Tests', year: '2025', genre: 'Skip' }))
 await fs.writeFile(privatePath, 'private test data', 'utf8')
-await fs.writeFile(secondaryTrackPath, createWave(1))
+await fs.writeFile(secondaryTrackPath, createWave(1, 44100, { title: 'Secondary Source', artist: 'Secondary Artist', album: 'Remote Tests' }))
 await fs.writeFile(path.join(music, 'Polaris Test Tone.lrc'), '[00:00.00]Polaris smoke lyric\n[00:01.00]Playback is working\n', 'utf8')
 await fs.writeFile(path.join(music, 'Skip Target.lrc'), Array.from({ length: 30 }, (_, index) => `Static lyric ${index + 1}`).join('\n'), 'utf8')
 const id = createHash('sha1').update(trackPath).digest('hex')
 const url = `polaris://media/${Buffer.from(trackPath).toString('base64url')}`
+const trackSize = (await fs.stat(trackPath)).size
 const secondId = createHash('sha1').update(secondTrackPath).digest('hex')
 const secondUrl = `polaris://media/${Buffer.from(secondTrackPath).toString('base64url')}`
 await fs.writeFile(path.join(profile, 'library.json'), JSON.stringify({
@@ -105,7 +168,7 @@ const app = await electron.launch({
 try {
   const page = await app.firstWindow()
   page.on('console', (message) => console.log(`[renderer:${message.type()}] ${message.text()}`))
-  await page.getByText('Polaris 1.0.8 is available').waitFor({ timeout: 5000 })
+  await page.getByText('Polaris 1.0.9 is available').waitFor({ timeout: 5000 })
   await page.getByRole('button', { name: 'Dismiss update' }).click()
   await page.getByRole('button', { name: 'Songs', exact: true }).click()
   await page.getByRole('button', { name: 'Play Polaris Test Tone' }).click()
@@ -141,7 +204,7 @@ try {
   if (range.status !== 206 || range.length !== 44 || !range.range?.startsWith('bytes 0-43/')) {
     throw new Error(`Invalid media range response: ${JSON.stringify(range)}`)
   }
-  if (range.suffixStatus !== 206 || range.suffixLength !== 128 || !range.suffixRange?.endsWith('/264644') || range.fullStatus !== 200 || range.fullLength !== 264644) {
+  if (range.suffixStatus !== 206 || range.suffixLength !== 128 || !range.suffixRange?.endsWith(`/${trackSize}`) || range.fullStatus !== 200 || range.fullLength !== trackSize) {
     throw new Error(`Invalid resilient media response: ${JSON.stringify(range)}`)
   }
   if (audioState.paused || audioState.currentTime <= 0.25) throw new Error(`Playback did not advance: ${JSON.stringify(audioState)}`)
@@ -280,6 +343,7 @@ try {
   await playlistRows.filter({ hasText: 'Skip Target' }).dragTo(playlistRows.filter({ hasText: 'Polaris Test Tone' }), { targetPosition: { x: 10, y: 2 } })
   await page.waitForFunction(([firstId, secondId]) => window.polaris.getLibrary().then((value) => value.playlists[0]?.trackIds.join(',') === `${secondId},${firstId}`), [id, secondId])
 
+  await page.getByRole('button', { name: 'Play Polaris Test Tone' }).click()
   await page.getByRole('button', { name: 'Thumbs up' }).click()
   await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.liked.length === 1 && value.disliked.length === 0))
   await page.getByRole('button', { name: 'Thumbs down' }).click()
@@ -301,6 +365,33 @@ try {
   await page.getByRole('heading', { name: 'Settings' }).waitFor()
   const migratedLibrary = await page.evaluate(() => window.polaris.getLibrary())
   if (migratedLibrary.folders.length !== 1 || migratedLibrary.folders[0] !== migratedLibrary.folder) throw new Error(`Legacy folder migration failed: ${JSON.stringify(migratedLibrary.folders)}`)
+  await page.getByLabel('Server URL').fill(`http://127.0.0.1:${artistAddress.port}`)
+  await page.getByLabel('Username').fill('polaris')
+  await page.getByLabel('Password').fill('test-password')
+  await page.getByRole('button', { name: 'Connect' }).click()
+  await page.getByText('Work Jellyfin', { exact: true }).waitFor()
+  const jellyfinLibrary = await page.evaluate(() => window.polaris.getLibrary())
+  const jellyfinTrack = jellyfinLibrary.tracks.find((track) => track.sourceType === 'jellyfin')
+  if (!jellyfinTrack || jellyfinTrack.title !== 'Remote Library Song' || jellyfinTrack.sampleRate !== 48000 || jellyfinTrack.bitDepth !== 24 || !jellyfinTrack.lossless) throw new Error(`Jellyfin metadata mapping failed: ${JSON.stringify(jellyfinTrack)}`)
+  if (jellyfinTrack.url.includes('raw-test-token') || jellyfinTrack.artwork.includes('raw-test-token')) throw new Error('Jellyfin token leaked into a renderer media URL')
+  const jellyfinResources = await page.evaluate(async (track) => {
+    const [audio, artwork] = await Promise.all([fetch(track.url), fetch(track.artwork)])
+    return { audioStatus: audio.status, audioBytes: (await audio.arrayBuffer()).byteLength, artworkStatus: artwork.status, artworkType: artwork.headers.get('content-type') }
+  }, jellyfinTrack)
+  if (jellyfinResources.audioStatus !== 200 || jellyfinResources.audioBytes !== jellyfinAudio.length || jellyfinResources.artworkStatus !== 200 || jellyfinResources.artworkType !== 'image/png') throw new Error(`Jellyfin proxy failed: ${JSON.stringify(jellyfinResources)}`)
+  await page.getByRole('button', { name: 'Songs', exact: true }).click()
+  await page.getByRole('heading', { name: 'Songs' }).waitFor()
+  await page.getByRole('button', { name: 'Play Remote Library Song' }).click()
+  await page.waitForFunction((remoteUrl) => { const audio = document.querySelector('audio'); return audio?.currentSrc === remoteUrl && !audio.paused && audio.currentTime > 0.1 }, jellyfinTrack.url)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('heading', { name: 'Settings' }).waitFor()
+  const credentialFile = await fs.readFile(path.join(profile, 'jellyfin-credentials.json'), 'utf8')
+  if (credentialFile.includes('test-password') || credentialFile.includes('raw-test-token')) throw new Error('Jellyfin credentials were stored without encryption')
+  await page.getByRole('button', { name: 'Refresh Work Jellyfin' }).click()
+  await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.jellyfinServers[0]?.lastSyncedAt > 0))
+  if (jellyfinItemRequests < 2 || jellyfinAuthorizedRequests < 4) throw new Error(`Jellyfin authenticated requests were incomplete: ${JSON.stringify({ jellyfinItemRequests, jellyfinAuthorizedRequests })}`)
+  await page.getByRole('button', { name: 'Disconnect Work Jellyfin' }).click()
+  await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.jellyfinServers.length === 0 && !value.tracks.some((track) => track.sourceType === 'jellyfin')))
   await app.evaluate(({ dialog }, folder) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] })
   }, secondMusic)
@@ -314,13 +405,13 @@ try {
     return track ? (await fetch(track.url, { headers: { Range: 'bytes=0-43' } })).status : 0
   }, secondaryTrackPath)
   if (secondaryMediaStatus !== 206) throw new Error(`Secondary source media was not authorized: ${secondaryMediaStatus}`)
-  await page.getByText('Polaris 1.0.8 is ready to download.').waitFor()
+  await page.getByText('Polaris 1.0.9 is ready to download.').waitFor()
   await page.getByRole('button', { name: 'Check for updates' }).click()
-  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.8 is ready to download.'))
+  await page.waitForFunction(() => document.body.textContent?.includes('Polaris 1.0.9 is ready to download.'))
   if (updateRequests < 2) throw new Error(`Manual update check did not reach the release endpoint: ${updateRequests}`)
   const updateInfo = await page.evaluate(() => window.polaris.checkForUpdates())
-  if (!updateInfo.downloadUrl.endsWith('Polaris-1.0.8-Setup.exe')) throw new Error(`Updater did not prefer the installed build: ${updateInfo.downloadUrl}`)
-  await page.getByRole('button', { name: 'Get version 1.0.8' }).waitFor()
+  if (!updateInfo.downloadUrl.endsWith('Polaris-1.0.9-Setup.exe')) throw new Error(`Updater did not prefer the installed build: ${updateInfo.downloadUrl}`)
+  await page.getByRole('button', { name: 'Get version 1.0.9' }).waitFor()
   const titleLogo = page.locator('.wordmark img')
   await titleLogo.waitFor()
   if (!await titleLogo.evaluate((image) => image.complete && image.naturalWidth > 0)) throw new Error('Application logo did not load')
@@ -348,6 +439,7 @@ try {
     await page.setViewportSize({ width: 1440, height: 900 })
   }
   await page.getByRole('button', { name: 'Songs', exact: true }).click()
+  await page.getByRole('heading', { name: 'Songs' }).waitFor()
 
   const search = page.getByPlaceholder('Search songs, artists, albums')
   await search.fill('Coldplay')
@@ -415,7 +507,7 @@ try {
   await page.waitForFunction(() => window.polaris.getLibrary().then((value) => value.tracks.some((track) => track.title === 'Automatically Added')), null, { timeout: 15000 })
   if (await page.locator('.scan-toast').count()) throw new Error('Automatic refresh left foreground scan progress visible')
 
-  console.log(JSON.stringify({ playback, range, scanMs: Math.round(scanMs), mediaGuard: 'passed', automaticLibraryUpdate: 'passed', discovery: 'passed', feedback: 'passed', lyrics: 'loaded', navigation: 'passed', playlists: 'passed', supermix: 'passed', settings: 'passed', search: 'passed', sorting: 'passed', rowMenu: 'passed', immersivePlayer: 'passed' }, null, 2))
+  console.log(JSON.stringify({ playback, range, scanMs: Math.round(scanMs), mediaGuard: 'passed', automaticLibraryUpdate: 'passed', discovery: 'passed', feedback: 'passed', jellyfin: 'passed', lyrics: 'loaded', navigation: 'passed', playlists: 'passed', supermix: 'passed', settings: 'passed', search: 'passed', sorting: 'passed', rowMenu: 'passed', immersivePlayer: 'passed' }, null, 2))
 } finally {
   await app.close()
   lyricsServer.close()

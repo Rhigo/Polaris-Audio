@@ -14,8 +14,8 @@ The latest release includes two Windows builds:
 
 | Download | Best for |
 | --- | --- |
-| `Polaris-1.0.7-Setup.exe` | Normal use. Installs Polaris and creates stable Start Menu and desktop shortcuts. |
-| `Polaris-1.0.7-Portable.exe` | Running without installation or from removable storage. |
+| `Polaris-1.0.8-Setup.exe` | Normal use. Installs Polaris and creates stable Start Menu and desktop shortcuts. |
+| `Polaris-1.0.8-Portable.exe` | Running without installation or from removable storage. |
 
 Use the setup build if you want to pin Polaris to the taskbar. The portable build extracts to a temporary directory while it runs, so Windows cannot keep a stable pinned shortcut for it.
 
@@ -43,6 +43,19 @@ For the best browsing experience, populate the artist, album, album artist, genr
 - Monkey's Audio (`.ape`)
 
 Polaris scans and extracts metadata from these file types. Playback ultimately depends on the codec support included with Electron.
+
+## Connect Jellyfin
+
+Polaris can combine music from one or more Jellyfin servers with your local and NAS sources. Synced Jellyfin songs appear in the same Artists, Albums, Songs, Genres, Decades, search, playlists, and Supermix views as local music.
+
+1. Open **Settings > Jellyfin servers**.
+2. Enter the complete server URL. Public domains such as `music.example.com` default to HTTPS; local addresses should include their protocol and port, such as `http://192.168.1.20:8096`.
+3. Enter your Jellyfin username and password, then select **Connect**.
+4. Wait for the music metadata to sync. Use the refresh button beside the server whenever you want to update it.
+
+Include any configured Jellyfin base path in the address, for example `https://example.com/jellyfin`. To listen away from home, the Jellyfin server must already allow remote access for your account and be reachable from the internet. Jellyfin recommends a trusted HTTPS certificate and reverse proxy; exposing the default HTTP port directly to the internet is not recommended.
+
+Polaris sends the password only to the selected Jellyfin server during sign-in and never saves it. The returned access token is encrypted using Windows credential protection and is used only by the Electron main process. Disconnecting a server removes its token and cached tracks from Polaris without deleting anything from Jellyfin.
 
 ## Explore Your Library
 
@@ -110,6 +123,7 @@ If an online service is unavailable, normal library browsing and playback contin
 Settings include:
 
 - Music source management and manual library refresh.
+- Jellyfin server connection, refresh, and disconnect controls.
 - Online lyric lookup.
 - Plain-lyric auto-scroll and lyric contrast.
 - Visualizer style, intensity, opacity, and color.
@@ -122,7 +136,7 @@ Playback state such as volume, shuffle, and repeat mode is restored between sess
 
 ## Privacy and Network Access
 
-Your audio stays on your computer or network storage. Polaris streams files directly from the folders you select and does not upload them.
+Local audio stays on your computer or network storage. Polaris streams local files directly from the folders you select and does not upload them. When you connect Jellyfin, audio and artwork are requested directly from that server through an authenticated main-process proxy.
 
 Some enrichment features make internet requests using only the artist, album, song title, duration, or application version needed for the request:
 
@@ -136,6 +150,7 @@ Some enrichment features make internet requests using only the artist, album, so
 | [Apple Music](https://music.apple.com/) | Final artist-catalog fallback |
 | Wikimedia | Fallback artist imagery |
 | GitHub | Checks for newer Polaris releases |
+| Your Jellyfin server | Authentication, music metadata, artwork, and audio streaming when you add it |
 
 Online lyrics can be disabled in Settings. Other artist enrichment is loaded only when relevant artist views are opened. Results are cached locally, and MusicBrainz requests are serialized and rate-limited.
 
@@ -154,6 +169,7 @@ Polaris stores its library index and preferences in `%APPDATA%\Polaris`:
 | `library.json` | Music sources, indexed tracks, history, favorites, ratings, playlists, and settings |
 | `artist-images.json` | Cached artist details, imagery, links, and rankings |
 | `online-lyrics.json` | Cached online lyrics and lookup results |
+| `jellyfin-credentials.json` | Device identifiers and access tokens encrypted by Electron secure storage |
 | `artwork\` | Artwork extracted from your audio-file metadata |
 
 The index points to your music files; it does not copy the audio into the application-data folder.
@@ -174,15 +190,22 @@ Check the file's embedded tags and artwork. For sidecar lyrics, use the song's e
 **A format is indexed but does not play**  
 Playback uses Electron's Windows media support. Re-encoding unusual files to FLAC, MP3, AAC, or Opus can resolve codec-specific failures.
 
+**A Jellyfin server will not connect**
+Open the same URL in a browser on this computer first. Include `http://` and port `8096` for a typical local server, or use a trusted `https://` URL for remote access. Include the complete base path when the server uses one. Confirm that the account is allowed to connect remotely in Jellyfin.
+
+**Jellyfin playback stops away from home**
+Confirm that the public URL remains reachable and that its HTTPS certificate is valid. Polaris requests an MP3-compatible universal audio stream capped at 320 kbps, so the Jellyfin server must have transcoding available when the original format cannot be streamed directly.
+
 For reproducible problems, [open a GitHub issue](https://github.com/Rhigo/Polaris-Audio/issues) with the Polaris version, Windows version, audio format, and steps needed to reproduce it. Please do not attach copyrighted audio; a short generated test file or metadata description is enough.
 
 Security issues should be reported according to [SECURITY.md](SECURITY.md).
 
-## What's New in 1.0.7
+## What's New in 1.0.8
 
-- Added a remembered **Auto-scroll** toggle for lyrics without timestamps.
-- Kept automatic plain-lyric scrolling enabled by default.
-- Clarified update prompts for installed Windows releases.
+- Added local and remote Jellyfin server connections.
+- Added secure Jellyfin sign-in, encrypted access-token storage, and authenticated streaming.
+- Added Jellyfin metadata, artwork, refresh, and disconnect support throughout the existing library.
+- Expanded Electron smoke coverage and made test commands self-contained.
 
 See [CHANGELOG.md](CHANGELOG.md) for the complete release history.
 
@@ -215,7 +238,7 @@ Additional commands:
 | `npm run dist` | Build the Windows setup and portable executables |
 | `npm run preview` | Preview the production web bundle with Vite |
 
-The smoke suite covers scanning, streaming, playback, lyrics, discovery, artist services, playlists, feedback, settings, updates, and desktop and narrow-window layouts.
+The smoke suite covers scanning, local and Jellyfin streaming, secure remote authentication, lyrics, discovery, artist services, playlists, feedback, settings, updates, and desktop and narrow-window layouts.
 
 ### Project structure
 
@@ -224,7 +247,7 @@ The smoke suite covers scanning, streaming, playback, lyrics, discovery, artist 
 | `src/App.tsx` | React views, playback state, search, playlists, Supermix, lyrics, and settings UI |
 | `src/App.css` and `src/index.css` | Responsive application and global styles |
 | `src/types.ts` | Shared renderer-side data contracts |
-| `electron/main.js` | Window lifecycle, scanning, metadata, persistence, streaming, updates, and online services |
+| `electron/main.js` | Window lifecycle, scanning, metadata, persistence, local and Jellyfin streaming, updates, and online services |
 | `electron/preload.cjs` | Context-isolated renderer API |
 | `tests/electron-smoke.mjs` | End-to-end Electron behavior checks |
 | `tests/performance-smoke.mjs` | Large-library performance checks |

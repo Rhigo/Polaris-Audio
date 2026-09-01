@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.8 - 2026-09-01
+
+- Added Jellyfin music libraries as first-class Polaris sources.
+- Added sign-in for local servers and trusted public HTTPS URLs, including installations hosted below a base URL.
+- Added paginated Jellyfin library sync, artwork, audio transcoding, refresh, and disconnect controls.
+- Protected Jellyfin access tokens with Electron secure storage and kept credentials out of renderer-visible media URLs.
+- Added end-to-end Jellyfin authentication, metadata, artwork, playback, refresh, disconnect, and credential-storage coverage.
+- Made smoke and performance test commands start their required Vite preview server automatically.
+- Stabilized metadata and navigation fixtures used by the Electron smoke suite.
+
 ## 1.0.7 - 2026-08-31
 
 - Added a persistent auto-scroll toggle directly above lyrics without timestamps.

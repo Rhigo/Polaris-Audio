@@ -20,6 +20,9 @@ export interface Track {
   addedAt: number
   fileSize?: number
   modifiedAt?: number
+  sourceType?: 'local' | 'jellyfin'
+  sourceId?: string
+  remoteId?: string
 }
 
 export interface Playlist {
@@ -50,6 +53,15 @@ export interface Settings {
   accentColor: AccentColor
 }
 
+export interface JellyfinServer {
+  id: string
+  url: string
+  name: string
+  username: string
+  userId: string
+  lastSyncedAt: number
+}
+
 export interface Library {
   folders: string[]
   folder: string
@@ -59,6 +71,7 @@ export interface Library {
   liked: string[]
   disliked: string[]
   playlists: Playlist[]
+  jellyfinServers: JellyfinServer[]
   settings: Settings
 }
 
@@ -76,6 +89,9 @@ declare global {
       addSource: () => Promise<Library | null>
       removeSource: (folder: string) => Promise<Library>
       rescan: () => Promise<Library>
+      connectJellyfin: (credentials: { url: string; username: string; password: string }) => Promise<Library>
+      refreshJellyfin: (serverId: string) => Promise<Library>
+      disconnectJellyfin: (serverId: string) => Promise<Library>
       saveState: (state: Partial<Pick<Library, 'history' | 'favorites' | 'liked' | 'disliked' | 'playlists' | 'settings'>>) => Promise<void>
       getLyrics: (lyricPath: string, embedded?: string, trackPath?: string, track?: Pick<Track, 'title' | 'artist' | 'album' | 'duration'>) => Promise<LyricLine[]>
       getArtistImage: (artist: string) => Promise<ArtistImages>
