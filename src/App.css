@@ -247,6 +247,8 @@ h1 { margin: 5px 0 9px; color: var(--text); font-size: clamp(34px, 4vw, 58px); l
 .jellyfin-form input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
 .jellyfin-form .secondary-button { min-height: 36px; }
 .jellyfin-error { margin: -8px 0 0; padding: 9px 10px; color: #ffaaa7 !important; border: 1px solid rgba(240,80,77,.3); border-radius: 4px; background: rgba(240,80,77,.08); }
+.jellyfin-progress { margin: -8px 0 0; display: flex; align-items: center; gap: 8px; color: #d7d4d2 !important; font-size: 11px; }
+.jellyfin-progress svg { width: 14px; }
 .settings-group--visualizer { grid-row: span 2; }
 .settings-group--release { min-height: 0; grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(290px, .75fr); align-items: center; gap: 28px; background: linear-gradient(115deg, #17151b, #151517 58%); }
 .release-copy ul { margin: 17px 0 0; padding: 0; display: grid; gap: 8px; list-style: none; }

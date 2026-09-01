@@ -18,6 +18,11 @@ contextBridge.exposeInMainWorld('polaris', {
     ipcRenderer.on('library:progress', handler)
     return () => ipcRenderer.removeListener('library:progress', handler)
   },
+  onJellyfinProgress: (callback) => {
+    const handler = (_event, progress) => callback(progress)
+    ipcRenderer.on('jellyfin:progress', handler)
+    return () => ipcRenderer.removeListener('jellyfin:progress', handler)
+  },
   onLibraryUpdated: (callback) => {
     const handler = (_event, library) => callback(library)
     ipcRenderer.on('library:updated', handler)

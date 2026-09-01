@@ -14,8 +14,8 @@ The latest release includes two Windows builds:
 
 | Download | Best for |
 | --- | --- |
-| `Polaris-1.0.9-Setup.exe` | Normal use. Installs Polaris and creates stable Start Menu and desktop shortcuts. |
-| `Polaris-1.0.9-Portable.exe` | Running without installation or from removable storage. |
+| `Polaris-1.0.10-Setup.exe` | Normal use. Installs Polaris and creates stable Start Menu and desktop shortcuts. |
+| `Polaris-1.0.10-Portable.exe` | Running without installation or from removable storage. |
 
 Use the setup build if you want to pin Polaris to the taskbar. The portable build extracts to a temporary directory while it runs, so Windows cannot keep a stable pinned shortcut for it.
 
@@ -194,17 +194,17 @@ Playback uses Electron's Windows media support. Re-encoding unusual files to FLA
 Open the same URL in a browser on this computer first. Include `http://` and port `8096` for a typical local server, or use a trusted `https://` URL for remote access. Include the complete base path when the server uses one. Confirm that the account is allowed to connect remotely in Jellyfin.
 
 **Jellyfin playback stops away from home**
-Confirm that the public URL remains reachable and that its HTTPS certificate is valid. Polaris requests an MP3-compatible universal audio stream capped at 320 kbps, so the Jellyfin server must have transcoding available when the original format cannot be streamed directly.
+Confirm that the public URL remains reachable and that its HTTPS certificate is valid. Polaris streams the original file through its authenticated proxy, so playback depends on the codec support included with Electron.
 
 For reproducible problems, [open a GitHub issue](https://github.com/Rhigo/Polaris-Audio/issues) with the Polaris version, Windows version, audio format, and steps needed to reproduce it. Please do not attach copyrighted audio; a short generated test file or metadata description is enough.
 
 Security issues should be reported according to [SECURITY.md](SECURITY.md).
 
-## What's New in 1.0.9
+## What's New in 1.0.10
 
-- Added **Folder** and **Add Jellyfin server** choices to the source button.
-- Made Settings and Jellyfin setup available before a local library exists.
-- Made first-run setup work for Jellyfin-only libraries.
+- Added visible progress while Jellyfin signs in and loads music.
+- Added bounded metadata responses with actionable timeout errors.
+- Improved initial sync behavior for slower remote servers.
 
 See [CHANGELOG.md](CHANGELOG.md) for the complete release history.
 
