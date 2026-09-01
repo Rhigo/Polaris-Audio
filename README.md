@@ -1,129 +1,234 @@
 # Polaris Audio
 
-**A fast, private Windows music player for large local and NAS libraries.**
+**A fast, private Windows music player for local and network libraries.**
 
-Polaris plays your own collection directly from disk. It combines a responsive library, immersive playback, synchronized lyrics, rich artist pages, playlists, and a preference-aware Supermix without uploading your audio.
+Polaris plays music directly from your computer, mapped drives, and NAS shares. Browse large collections, build playlists, follow lyrics, discover more about your artists, and generate a Supermix shaped by your listening without uploading your audio.
 
-[Download the latest Polaris release for Windows](https://github.com/Rhigo/Polaris-Audio/releases/latest)
-
-For normal Windows use, download `Polaris-1.0.7-Setup.exe`. The portable build remains available for removable or no-install use, but should not be pinned to the taskbar because it runs from a temporary extraction directory.
-
-## What's New in 1.0.7
-
-- Lyrics without timestamps now include an **Auto-scroll** toggle.
-- Auto-scroll remains enabled by default and follows playback progress when active.
-- Turning it off is remembered, allowing manual lyric scrolling for songs with long intros.
-- Installed update prompts continue to prefer the setup build while keeping the portable edition available.
-
-Both Windows executables are currently unsigned, so Windows SmartScreen may display an **Unknown publisher** warning.
+[Download the latest release for Windows](https://github.com/Rhigo/Polaris-Audio/releases/latest)
 
 ![Polaris artist view](docs/screenshots/artist.png)
 
-## Highlights
+## Install Polaris
 
-- **Built for large collections** - tested with 20,000 tracks, bounded rendering, cached metadata, and concurrent scanning.
-- **Multiple music sources** - combine local folders, mapped drives, and NAS shares in one library.
-- **Quiet incremental updates** - unchanged files reuse indexed tags while file and `.lrc` changes refresh silently in the background.
-- **Local-first playback** - FLAC, MP3, AAC/ALAC, OGG, Opus, WAV, WMA, and APE support with byte-range streaming.
-- **Library discovery** - browse artists, albums, songs, genres, decades, recent plays, and loved songs.
-- **Supermix** - a regenerating mix shaped by listening history, favorites, thumbs-up, thumbs-down, artists, and genres.
-- **Persistent playlists** - create, rename, reorder, remove, and drag tracks into playlists.
-- **Immersive player** - desktop and mobile layouts with artwork, lyrics, queue, visualizer, shuffle, repeat-all, and repeat-one.
-- **Lyrics fallback** - local `.lrc`, embedded lyrics, then cached LRCLIB results.
-- **Rich artist context** - biography and imagery from TheAudioDB, links from MusicBrainz, and ListenBrainz popularity intersected strictly with tracks you own.
+The latest release includes two Windows builds:
+
+| Download | Best for |
+| --- | --- |
+| `Polaris-1.0.7-Setup.exe` | Normal use. Installs Polaris and creates stable Start Menu and desktop shortcuts. |
+| `Polaris-1.0.7-Portable.exe` | Running without installation or from removable storage. |
+
+Use the setup build if you want to pin Polaris to the taskbar. The portable build extracts to a temporary directory while it runs, so Windows cannot keep a stable pinned shortcut for it.
+
+Polaris is currently built and released for Windows.
+
+## Add Your Music
+
+1. Open Polaris and select **Add music source**.
+2. Choose a local folder, mapped network drive, or UNC network share.
+3. Add any other folders from **Settings > Music sources**.
+4. Keep Polaris open while the first library scan completes.
+
+Polaris reads folders recursively and combines every source into one library. Later scans reuse unchanged metadata, while changes to audio files and matching `.lrc` files are refreshed automatically in the background. A manual refresh is available in Settings.
+
+For the best browsing experience, populate the artist, album, album artist, genre, year, disc, and track tags in your audio files. When tags are missing, Polaris uses the filename as the title and groups the track under **Unknown Artist** or **Unknown Album**.
+
+### Recognized audio formats
+
+- FLAC (`.flac`)
+- MP3 (`.mp3`)
+- AAC and ALAC (`.aac`, `.m4a`)
+- Ogg Vorbis and Opus (`.ogg`, `.opus`)
+- WAV (`.wav`)
+- Windows Media Audio (`.wma`)
+- Monkey's Audio (`.ape`)
+
+Polaris scans and extracts metadata from these file types. Playback ultimately depends on the codec support included with Electron.
 
 ## Explore Your Library
 
-Genre and decade views are generated from your tags. Every tile opens a real filtered track list, and the Library navigation can collapse when you want more room.
+Use the sidebar to open:
+
+- **Home** for an overview of your collection and recent listening.
+- **Supermix** for up to 100 tracks selected from your history, favorites, ratings, artists, and genres.
+- **Recently played** for your latest listening history.
+- **Artists**, **Albums**, and **Songs** for sortable collection views.
+- **Genres** and **Decades** for views generated from your file tags.
+- **Loved songs** for tracks marked with the heart button.
+- **Playlists** for your own saved collections.
+
+Search matches songs, albums, and artists. Large result sets are rendered in batches to keep navigation responsive; Polaris includes a performance test built around a synthetic 20,000-track collection.
 
 ![Polaris genre browser](docs/screenshots/genres.png)
 
-## Focused Playback
+## Play Music
 
-The expanded player keeps transport, feedback, playlist actions, lyrics, queue, and visualizer controls close without hiding the music. Dynamic artwork rendering avoids expensive full-screen blur effects, and lyric lookup uses a binary search as playback advances.
+Select a song to start playback from the current list. The player includes:
+
+- Play, pause, previous, and next controls.
+- Shuffle and repeat-off, repeat-all, and repeat-one modes.
+- Seek and volume controls.
+- A visible play queue.
+- Favorite, thumbs-up, and thumbs-down actions.
+- Album artwork and Windows media-session information.
+- Spectrum, waveform, and ambient visualizer styles.
+
+Open the expanded player for artwork, lyrics, queue controls, and the visualizer in one view. The layout adapts to narrow windows while retaining the same playback controls.
 
 ![Polaris expanded player](docs/screenshots/player-desktop.png)
 
-The same experience adapts to narrow screens while preserving the draggable Windows title bar and readable lyrics.
+![Polaris lyrics player in a narrow window](docs/screenshots/player-mobile.png)
 
-<img src="docs/screenshots/player-mobile.png" alt="Polaris mobile lyrics player" width="390">
+### Lyrics
 
-## Privacy
+Polaris looks for lyrics in this order:
 
-Your audio stays on your computer or NAS. Polaris stores its library index, settings, history, playlists, feedback, lyric cache, and extracted artwork in Electron's per-user application data directory.
+1. A `.lrc` file beside the song with the same filename.
+2. Lyrics embedded in the audio file's metadata.
+3. LRCLIB, when **Online lyrics** is enabled in Settings.
 
-Online requests contain only the metadata needed for the selected feature:
+Timestamped lyrics follow playback and can be selected to seek within the song. Plain lyrics can scroll automatically based on playback progress; use the **Auto-scroll** switch above the lyrics to change that behavior. The preference is remembered.
 
-| Service | Used for |
+### Playlists and ratings
+
+Create a playlist from the sidebar, then use a song's menu to add it. Within a playlist you can rename or delete the playlist, remove songs, and drag songs into a new order.
+
+The heart, thumbs-up, and thumbs-down controls are separate signals. Loved songs appear in their own library view, while all three signals help shape Supermix. Disliked songs are excluded from Supermix.
+
+## Artist Pages
+
+Artist pages combine your locally owned music with optional public information:
+
+- Biography, genres, and artist imagery.
+- Public artist and social links.
+- A popularity-ranked top ten containing only songs in your library.
+- Albums and songs grouped under the selected artist.
+
+If an online service is unavailable, normal library browsing and playback continue to work. Missing results are cached briefly to avoid repeated requests.
+
+## Personalize Polaris
+
+Settings include:
+
+- Music source management and manual library refresh.
+- Online lyric lookup.
+- Plain-lyric auto-scroll and lyric contrast.
+- Visualizer style, intensity, opacity, and color.
+- Dynamic player backgrounds.
+- Reduced motion.
+- Sidebar expansion and accent-color presets.
+- Update checks and release information.
+
+Playback state such as volume, shuffle, and repeat mode is restored between sessions.
+
+## Privacy and Network Access
+
+Your audio stays on your computer or network storage. Polaris streams files directly from the folders you select and does not upload them.
+
+Some enrichment features make internet requests using only the artist, album, song title, duration, or application version needed for the request:
+
+| Service | Purpose |
 | --- | --- |
 | [LRCLIB](https://lrclib.net/) | Lyrics when local and embedded lyrics are unavailable |
 | [TheAudioDB](https://www.theaudiodb.com/) | Artist biographies and imagery |
-| [MusicBrainz](https://musicbrainz.org/) | Canonical artist identity and public links |
-| [ListenBrainz](https://listenbrainz.org/) | Global recording rank, filtered to local tracks |
-| [Deezer](https://www.deezer.com/) | Public artist track rank when ListenBrainz is unavailable |
-| [Apple Music](https://music.apple.com/) | Final artist catalog fallback |
-| Wikimedia | Artist image fallback |
+| [MusicBrainz](https://musicbrainz.org/) | Artist identity and public links |
+| [ListenBrainz](https://listenbrainz.org/) | Public recording popularity, filtered to music you own |
+| [Deezer](https://www.deezer.com/) | Fallback public artist-track ranking |
+| [Apple Music](https://music.apple.com/) | Final artist-catalog fallback |
+| Wikimedia | Fallback artist imagery |
+| GitHub | Checks for newer Polaris releases |
 
-Online results and misses are cached. MusicBrainz requests are serialized and rate-limited with a descriptive user agent.
+Online lyrics can be disabled in Settings. Other artist enrichment is loaded only when relevant artist views are opened. Results are cached locally, and MusicBrainz requests are serialized and rate-limited.
 
-## Getting Started
+## Updates
 
-1. Download or build `Polaris-1.0.7-Setup.exe`. Use the portable build only when you do not need Start Menu or taskbar integration.
-2. Open Polaris and select **Add music source**.
-3. Choose a local folder, mapped network drive, or UNC share. Add more sources from Settings at any time.
-4. Leave Polaris open for the initial metadata scan. Later refreshes process only changed files.
+Polaris checks the latest GitHub Release at startup and when you select **Check for updates** in Settings. If an update is available, Polaris opens the setup download when one exists, otherwise it opens the portable download or release page.
 
-Polaris checks the repository's latest GitHub Release when it starts and on demand from Settings. When an update is available, it opens the release download for the setup build when available, falling back to the portable executable. It does not modify the currently running application.
+Updates are not installed silently and Polaris never replaces the executable that is currently running.
 
-For the best browsing experience, keep artist, album, genre, year, disc, and track tags populated. Place synchronized lyrics beside a song using the same filename and an `.lrc` extension.
+## Data and Removal
 
-## Removing Polaris
+Polaris stores its library index and preferences in `%APPDATA%\Polaris`:
 
-Uninstall Polaris from Windows Settings, or close Polaris and delete the portable executable. To also remove its library index, settings, artwork, and online metadata caches, delete `%APPDATA%\Polaris`.
+| Item | Contents |
+| --- | --- |
+| `library.json` | Music sources, indexed tracks, history, favorites, ratings, playlists, and settings |
+| `artist-images.json` | Cached artist details, imagery, links, and rankings |
+| `online-lyrics.json` | Cached online lyrics and lookup results |
+| `artwork\` | Artwork extracted from your audio-file metadata |
 
-## Development
+The index points to your music files; it does not copy the audio into the application-data folder.
 
-Requirements: Windows, Node.js 22 or later, and npm.
+To remove an installed copy, uninstall Polaris from Windows Settings. To remove a portable copy, close Polaris and delete its executable. Delete `%APPDATA%\Polaris` only if you also want to erase the library index, playlists, history, settings, and caches.
+
+## Troubleshooting
+
+**A network source is temporarily unavailable**  
+Reconnect the drive or NAS and refresh the library. Polaris preserves indexed tracks under an unavailable source during a scan so that a temporary outage does not erase your saved library state.
+
+**A new or changed song does not appear**  
+Wait for the background refresh or use the manual refresh in Settings. Confirm that the file uses a supported extension and that Polaris can read its folder.
+
+**Artwork, lyrics, or artist information is missing**  
+Check the file's embedded tags and artwork. For sidecar lyrics, use the song's exact filename with the `.lrc` extension. Online enrichment requires an internet connection and may have no result for some releases or artists.
+
+**A format is indexed but does not play**  
+Playback uses Electron's Windows media support. Re-encoding unusual files to FLAC, MP3, AAC, or Opus can resolve codec-specific failures.
+
+For reproducible problems, [open a GitHub issue](https://github.com/Rhigo/Polaris-Audio/issues) with the Polaris version, Windows version, audio format, and steps needed to reproduce it. Please do not attach copyrighted audio; a short generated test file or metadata description is enough.
+
+Security issues should be reported according to [SECURITY.md](SECURITY.md).
+
+## What's New in 1.0.7
+
+- Added a remembered **Auto-scroll** toggle for lyrics without timestamps.
+- Kept automatic plain-lyric scrolling enabled by default.
+- Clarified update prompts for installed Windows releases.
+
+See [CHANGELOG.md](CHANGELOG.md) for the complete release history.
+
+## For Contributors
+
+Polaris is an Electron application with a React and TypeScript interface. The Electron main process owns filesystem access, metadata extraction, library scanning, media streaming, caching, and internet requests. A context-isolated preload bridge exposes a small IPC API to the renderer; Node.js integration is disabled in the UI.
+
+### Requirements
+
+- Windows
+- Node.js 22 or later
+- npm
+
+### Run locally
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Useful checks:
+Additional commands:
 
-```powershell
-npm run lint
-npm run build
-npm run test:smoke
-npm run test:performance
-```
+| Command | Purpose |
+| --- | --- |
+| `npm run dev:web` | Run only the Vite frontend development server |
+| `npm run lint` | Lint the React, Electron, and Vite source |
+| `npm run build` | Type-check and create the production web bundle |
+| `npm run test:smoke` | Exercise the packaged-style Electron workflows with Playwright |
+| `npm run test:performance` | Test Songs and search with a synthetic 20,000-track library |
+| `npm run dist` | Build the Windows setup and portable executables |
+| `npm run preview` | Preview the production web bundle with Vite |
 
-The smoke suite launches real Electron and exercises streaming, playback, lyrics, discovery, artist APIs, playlists, feedback, settings, and desktop/mobile player layouts. The performance suite measures Songs and search with a synthetic 20,000-track library.
+The smoke suite covers scanning, streaming, playback, lyrics, discovery, artist services, playlists, feedback, settings, updates, and desktop and narrow-window layouts.
 
-Build the portable Windows application:
+### Project structure
 
-```powershell
-npm run dist
-```
-
-The configured builder writes `Polaris-1.0.7-Setup.exe` and `Polaris-1.0.7-Portable.exe` to the local release output directory. Install the setup build before pinning Polaris to the taskbar; the portable launcher runs from a temporary extraction directory that Windows cannot keep as a stable pinned shortcut.
-
-### Windows code signing
-
-Release builds carry Rhigo publisher metadata and automatically use an Authenticode certificate when electron-builder finds `CSC_LINK` and `CSC_KEY_PASSWORD`. `CSC_LINK` may point to a local `.pfx` file or contain its base64 value. Keep the certificate and password outside the repository.
-
-A trusted OV or EV code-signing certificate issued to Rhigo is required to establish SmartScreen reputation. Publisher metadata or a self-signed certificate alone cannot prevent Windows warnings.
-
-Qualifying open-source releases can instead use the free SignPath Foundation workflow documented in [SIGNING.md](SIGNING.md).
-
-## Release History
-
-See [CHANGELOG.md](CHANGELOG.md) for the cumulative release history.
-
-## Stack
-
-Electron 44, React 19, TypeScript 6, Vite 8, `music-metadata`, Lucide, and Playwright.
+| Path | Responsibility |
+| --- | --- |
+| `src/App.tsx` | React views, playback state, search, playlists, Supermix, lyrics, and settings UI |
+| `src/App.css` and `src/index.css` | Responsive application and global styles |
+| `src/types.ts` | Shared renderer-side data contracts |
+| `electron/main.js` | Window lifecycle, scanning, metadata, persistence, streaming, updates, and online services |
+| `electron/preload.cjs` | Context-isolated renderer API |
+| `tests/electron-smoke.mjs` | End-to-end Electron behavior checks |
+| `tests/performance-smoke.mjs` | Large-library performance checks |
+| `build-resources/` | Windows packaging resources |
 
 ## License
 
