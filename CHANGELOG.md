@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.14 - 2026-09-03
+
+- Synced Jellyfin playlists into Polaris while preserving their server order and keeping local playlists independent.
+- Made imported Jellyfin playlists read-only and removed them automatically when their server is disconnected.
+- Added instant shuffle play to playlists, albums, artists, Supermix, genres, decades, loved songs, and listening history.
+- Used explicit Jellyfin media formats for quality labels instead of exposing internal streaming addresses.
+- Added end-to-end coverage for imported playlist ownership, ordering, lossy quality labels, and immediate shuffle playback.
+
 ## 1.0.13 - 2026-09-01
 
 - Propagated cancelled custom-protocol responses to upstream Jellyfin requests so abandoned audio and artwork streams close promptly.

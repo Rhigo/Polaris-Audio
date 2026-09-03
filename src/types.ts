@@ -14,6 +14,7 @@ export interface Track {
   sampleRate: number
   bitDepth: number
   lossless: boolean
+  format?: string
   artwork: string
   lyricPath: string
   embeddedLyrics?: string
@@ -31,6 +32,9 @@ export interface Playlist {
   trackIds: string[]
   createdAt: number
   updatedAt: number
+  sourceType?: 'jellyfin'
+  sourceId?: string
+  remoteId?: string
 }
 
 export type VisualizerStyle = 'spectrum' | 'waveform' | 'ambient' | 'off'
