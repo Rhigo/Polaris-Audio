@@ -14,8 +14,8 @@ The latest release includes two Windows builds:
 
 | Download | Best for |
 | --- | --- |
-| `Polaris-1.0.13-Setup.exe` | Normal use. Installs Polaris and creates stable Start Menu and desktop shortcuts. |
-| `Polaris-1.0.13-Portable.exe` | Running without installation or from removable storage. |
+| `Polaris-1.0.14-Setup.exe` | Normal use. Installs Polaris and creates stable Start Menu and desktop shortcuts. |
+| `Polaris-1.0.14-Portable.exe` | Running without installation or from removable storage. |
 
 Use the setup build if you want to pin Polaris to the taskbar. The portable build extracts to a temporary directory while it runs, so Windows cannot keep a stable pinned shortcut for it.
 
@@ -57,6 +57,8 @@ Include any configured Jellyfin base path in the address, for example `https://e
 
 Polaris sends the password only to the selected Jellyfin server during sign-in and never saves it. The returned access token is encrypted using Windows credential protection and is used only by the Electron main process. Disconnecting a server removes its token and cached tracks from Polaris without deleting anything from Jellyfin.
 
+Jellyfin playlists sync in server order and appear beside local playlists. They are read-only in Polaris: edit them in Jellyfin, then refresh the server in Settings. Local playlists remain private to Polaris and are never overwritten by a server refresh.
+
 ## Explore Your Library
 
 Use the sidebar to open:
@@ -79,6 +81,7 @@ Select a song to start playback from the current list. The player includes:
 
 - Play, pause, previous, and next controls.
 - Shuffle and repeat-off, repeat-all, and repeat-one modes.
+- One-click shuffle play for playlists, albums, artists, Supermix, genres, decades, loved songs, and recent history.
 - Seek and volume controls.
 - A visible play queue.
 - Favorite, thumbs-up, and thumbs-down actions.
@@ -103,7 +106,7 @@ Timestamped lyrics follow playback and can be selected to seek within the song. 
 
 ### Playlists and ratings
 
-Create a playlist from the sidebar, then use a song's menu to add it. Within a playlist you can rename or delete the playlist, remove songs, and drag songs into a new order.
+Create a local playlist from the sidebar, then use a song's menu to add it. Within a local playlist you can rename or delete the playlist, remove songs, and drag songs into a new order. Synced Jellyfin playlists retain the order and contents managed by their server.
 
 The heart, thumbs-up, and thumbs-down controls are separate signals. Loved songs appear in their own library view, while all three signals help shape Supermix. Disliked songs are excluded from Supermix.
 
@@ -200,11 +203,11 @@ For reproducible problems, [open a GitHub issue](https://github.com/Rhigo/Polari
 
 Security issues should be reported according to [SECURITY.md](SECURITY.md).
 
-## What's New in 1.0.13
+## What's New in 1.0.14
 
-- Closed abandoned Jellyfin audio and artwork streams when changing tracks or views.
-- Deferred artwork downloads until covers become visible.
-- Improved resource stability during rapid artist changes and library refreshes.
+- Synced Jellyfin playlists in their server-defined order.
+- Added instant shuffle play across playlists and collection views.
+- Fixed lossy Jellyfin quality labels so they show formats such as MP3 instead of internal media addresses.
 
 See [CHANGELOG.md](CHANGELOG.md) for the complete release history.
 

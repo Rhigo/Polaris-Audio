@@ -307,6 +307,7 @@ function jellyfinTrack(server, item, previous) {
     genre: item.Genres?.[0] || '', duration: Number(item.RunTimeTicks) / 10000000 || 0,
     sampleRate: Number(audioStream.SampleRate) || 0, bitDepth: Number(audioStream.BitDepth) || 0,
     lossless: ['flac', 'alac', 'wav', 'ape'].some((format) => container.split(',').includes(format)),
+    format: container.split(',')[0] || String(audioStream.Codec || '').toLowerCase(),
     artwork: hasArtwork ? jellyfinArtworkUrl(server.id, imageItemId, fallbackImageItemId) : '', lyricPath: jellyfinLyricsPath(server.id, item.Id), embeddedLyrics: '',
     addedAt: previous?.addedAt || Date.parse(item.DateCreated || '') || Date.now(), fileSize: Number(mediaSource.Size) || undefined,
     sourceType: 'jellyfin', sourceId: server.id, remoteId: item.Id,
@@ -344,10 +345,29 @@ async function syncJellyfinServer(serverId) {
   }
   sendJellyfinProgress('Saving Jellyfin library...', items.length, items.length)
   const remoteTracks = items.map((item) => jellyfinTrack(server, item, existing.get(item.Id)))
+  const trackIdsByRemoteId = new Map(remoteTracks.map((track) => [track.remoteId, track.id]))
+  sendJellyfinProgress('Loading Jellyfin playlists...')
+  const playlistQuery = new URLSearchParams({ IncludeItemTypes: 'Playlist', Recursive: 'true', Fields: 'DateCreated', SortBy: 'SortName', SortOrder: 'Ascending' })
+  const playlistResponse = await jellyfinJson(server, credential, `/Users/${encodeURIComponent(server.userId)}/Items?${playlistQuery}`, {}, 30000, 2)
+  if (!playlistResponse.ok) throw new Error(playlistResponse.status === 401 ? 'Your Jellyfin session has expired. Reconnect the server.' : `Jellyfin returned ${playlistResponse.status} while loading playlists.`)
+  const playlistItems = Array.isArray(playlistResponse.data.Items) ? playlistResponse.data.Items : []
+  const remotePlaylists = await Promise.all(playlistItems.map(async (playlist) => {
+    const query = new URLSearchParams({ UserId: server.userId, Fields: 'MediaSources' })
+    const response = await jellyfinJson(server, credential, `/Playlists/${encodeURIComponent(playlist.Id)}/Items?${query}`, {}, 30000, 2)
+    if (!response.ok) throw new Error(`Jellyfin returned ${response.status} while loading playlist ${playlist.Name || 'Untitled'}.`)
+    const playlistTracks = Array.isArray(response.data.Items) ? response.data.Items : []
+    const timestamp = Date.parse(playlist.DateCreated || '') || Date.now()
+    return {
+      id: `jellyfin:${server.id}:playlist:${playlist.Id}`, name: playlist.Name || 'Untitled Playlist',
+      trackIds: playlistTracks.map((track) => trackIdsByRemoteId.get(track.Id)).filter(Boolean),
+      createdAt: timestamp, updatedAt: Date.now(), sourceType: 'jellyfin', sourceId: server.id, remoteId: playlist.Id,
+    }
+  }))
   const syncedAt = Date.now()
   const next = await updateCache((latest) => ({
     ...latest,
     tracks: [...latest.tracks.filter((track) => track.sourceType !== 'jellyfin' || track.sourceId !== serverId), ...remoteTracks],
+    playlists: [...latest.playlists.filter((playlist) => playlist.sourceType !== 'jellyfin' || playlist.sourceId !== serverId), ...remotePlaylists],
     jellyfinServers: latest.jellyfinServers.map((candidate) => candidate.id === serverId ? { ...candidate, lastSyncedAt: syncedAt } : candidate),
   }))
   mainWindow?.webContents.send('library:updated', next)
@@ -401,7 +421,7 @@ async function disconnectJellyfin(serverId) {
       ...library, tracks, jellyfinServers: library.jellyfinServers.filter((server) => server.id !== serverId),
       history: library.history.filter((id) => liveIds.has(id)), favorites: library.favorites.filter((id) => liveIds.has(id)),
       liked: library.liked.filter((id) => liveIds.has(id)), disliked: library.disliked.filter((id) => liveIds.has(id)),
-      playlists: library.playlists.map((playlist) => ({ ...playlist, trackIds: playlist.trackIds.filter((id) => liveIds.has(id)) })),
+      playlists: library.playlists.filter((playlist) => playlist.sourceType !== 'jellyfin' || playlist.sourceId !== serverId).map((playlist) => ({ ...playlist, trackIds: playlist.trackIds.filter((id) => liveIds.has(id)) })),
     }
   })
   resetJellyfinAccess()
